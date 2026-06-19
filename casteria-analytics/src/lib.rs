@@ -93,7 +93,9 @@ impl AnalyticsCollector {
 
 fn classify_user_agent(ua: &str) -> String {
     let ua = ua.to_lowercase();
-    if ua.contains("iphone") || ua.contains("ipad") || ua.contains("android") && !ua.contains("tv")
+    if ua.contains("iphone")
+        || ua.contains("ipad")
+        || ua.contains("android") && !ua.contains("tv")
     {
         "mobile".into()
     } else if ua.contains("smarttv")
@@ -114,5 +116,116 @@ fn classify_user_agent(ua: &str) -> String {
         "encoder".into()
     } else {
         "desktop".into()
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::classify_user_agent;
+
+    #[test]
+    fn ua_mobile_iphone() {
+        assert_eq!(classify_user_agent("Mozilla/5.0 (iPhone; CPU iPhone OS 17_0)"), "mobile");
+    }
+
+    #[test]
+    fn ua_mobile_ipad() {
+        assert_eq!(classify_user_agent("Mozilla/5.0 (iPad; CPU OS 17_0)"), "mobile");
+    }
+
+    #[test]
+    fn ua_mobile_android() {
+        assert_eq!(classify_user_agent("Mozilla/5.0 (Linux; Android 14)"), "mobile");
+    }
+
+    #[test]
+    fn ua_android_tv_is_not_mobile() {
+        assert_eq!(classify_user_agent("Android TV 14"), "tv");
+    }
+
+    #[test]
+    fn ua_tv_smarttv() {
+        assert_eq!(classify_user_agent("SmartTV"), "tv");
+    }
+
+    #[test]
+    fn ua_tv_roku() {
+        assert_eq!(classify_user_agent("Roku/4800X"), "tv");
+    }
+
+    #[test]
+    fn ua_tv_firetv() {
+        assert_eq!(classify_user_agent("FireTV/1.0"), "tv");
+    }
+
+    #[test]
+    fn ua_bot() {
+        assert_eq!(classify_user_agent("Googlebot/2.1"), "bot");
+    }
+
+    #[test]
+    fn ua_crawler() {
+        assert_eq!(classify_user_agent("SomeCrawler/1.0"), "bot");
+    }
+
+    #[test]
+    fn ua_spider() {
+        assert_eq!(classify_user_agent("Baiduspider"), "bot");
+    }
+
+    #[test]
+    fn ua_media_player_vlc() {
+        assert_eq!(classify_user_agent("VLC/3.0.20"), "media-player");
+    }
+
+    #[test]
+    fn ua_media_player_mpv() {
+        assert_eq!(classify_user_agent("mpv/0.35"), "media-player");
+    }
+
+    #[test]
+    fn ua_media_player_ffmpeg() {
+        assert_eq!(classify_user_agent("FFmpeg/6.0"), "media-player");
+    }
+
+    #[test]
+    fn ua_media_player_mplayer() {
+        assert_eq!(classify_user_agent("MPlayer/1.5"), "media-player");
+    }
+
+    #[test]
+    fn ua_encoder_liquidsoap() {
+        assert_eq!(classify_user_agent("liquidsoap/2.1.0"), "encoder");
+    }
+
+    #[test]
+    fn ua_encoder_butt() {
+        assert_eq!(classify_user_agent("butt/0.1.22"), "encoder");
+    }
+
+    #[test]
+    fn ua_desktop_chrome() {
+        assert_eq!(
+            classify_user_agent("Mozilla/5.0 (Windows NT 10.0) Chrome/120.0"),
+            "desktop"
+        );
+    }
+
+    #[test]
+    fn ua_desktop_firefox() {
+        assert_eq!(
+            classify_user_agent("Mozilla/5.0 (X11; Linux) Firefox/120.0"),
+            "desktop"
+        );
+    }
+
+    #[test]
+    fn ua_empty_string() {
+        assert_eq!(classify_user_agent(""), "desktop");
+    }
+
+    #[test]
+    fn ua_weird_unicode() {
+        assert_eq!(classify_user_agent("\u{1F600} streamer"), "desktop");
     }
 }

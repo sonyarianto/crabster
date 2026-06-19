@@ -121,3 +121,81 @@ impl FormatRegistry {
         self.get(ft)
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn exact_content_types() {
+        assert_eq!(FormatType::from_content_type("application/ogg"), FormatType::Ogg);
+        assert_eq!(FormatType::from_content_type("audio/ogg"), FormatType::Ogg);
+        assert_eq!(FormatType::from_content_type("audio/mpeg"), FormatType::Mp3);
+        assert_eq!(FormatType::from_content_type("audio/mp3"), FormatType::Mp3);
+        assert_eq!(FormatType::from_content_type("audio/aac"), FormatType::Aac);
+        assert_eq!(FormatType::from_content_type("audio/aacp"), FormatType::Aac);
+        assert_eq!(FormatType::from_content_type("audio/opus"), FormatType::Opus);
+        assert_eq!(FormatType::from_content_type("audio/flac"), FormatType::Flac);
+        assert_eq!(FormatType::from_content_type("application/flac"), FormatType::Flac);
+        assert_eq!(FormatType::from_content_type("video/webm"), FormatType::Webm);
+        assert_eq!(FormatType::from_content_type("audio/webm"), FormatType::Webm);
+        assert_eq!(FormatType::from_content_type("video/theora"), FormatType::Theora);
+        assert_eq!(FormatType::from_content_type("audio/speex"), FormatType::Speex);
+        assert_eq!(FormatType::from_content_type("audio/midi"), FormatType::Midi);
+        assert_eq!(FormatType::from_content_type("application/kate"), FormatType::Kate);
+        assert_eq!(FormatType::from_content_type("text/plain"), FormatType::Text);
+        assert_eq!(FormatType::from_content_type("text/html"), FormatType::Text);
+    }
+
+    #[test]
+    fn content_type_case_insensitive() {
+        assert_eq!(FormatType::from_content_type("Audio/MPEG"), FormatType::Mp3);
+        assert_eq!(FormatType::from_content_type("APPLICATION/OGG"), FormatType::Ogg);
+    }
+
+    #[test]
+    fn content_type_with_parameters() {
+        assert_eq!(
+            FormatType::from_content_type("audio/ogg; codecs=opus"),
+            FormatType::Ogg
+        );
+        assert_eq!(
+            FormatType::from_content_type("audio/mpeg; charset=utf-8"),
+            FormatType::Mp3
+        );
+    }
+
+    #[test]
+    fn content_type_substring_fallback() {
+        assert_eq!(FormatType::from_content_type("audio/x-vorbis+ogg"), FormatType::Ogg);
+        assert_eq!(FormatType::from_content_type("audio/x-mpeg-3"), FormatType::Mp3);
+        assert_eq!(FormatType::from_content_type("audio/x-aac"), FormatType::Aac);
+        assert_eq!(FormatType::from_content_type("audio/x-opus"), FormatType::Opus);
+        assert_eq!(FormatType::from_content_type("audio/x-flac"), FormatType::Flac);
+    }
+
+    #[test]
+    fn content_type_unknown() {
+        assert_eq!(FormatType::from_content_type("video/mp4"), FormatType::Unknown);
+        assert_eq!(FormatType::from_content_type("image/jpeg"), FormatType::Unknown);
+        assert_eq!(FormatType::from_content_type(""), FormatType::Unknown);
+    }
+
+    #[test]
+    fn mime_type_roundtrip() {
+        for ft in &[FormatType::Ogg, FormatType::Mp3, FormatType::Aac, FormatType::Opus] {
+            let ct = ft.mime_type();
+            assert_eq!(FormatType::from_content_type(ct), *ft);
+        }
+    }
+
+    #[test]
+    fn supports_icy_metadata() {
+        assert!(FormatType::Mp3.supports_icy_metadata());
+        assert!(FormatType::Aac.supports_icy_metadata());
+        assert!(FormatType::Generic.supports_icy_metadata());
+        assert!(!FormatType::Ogg.supports_icy_metadata());
+        assert!(!FormatType::Flac.supports_icy_metadata());
+        assert!(!FormatType::Opus.supports_icy_metadata());
+    }
+}

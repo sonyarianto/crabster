@@ -190,3 +190,97 @@ impl SourceManager {
         self.sources.len()
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn ring_buffer_write_read_normal() {
+        let mut rb = RingBuffer::new(16);
+        rb.write(b"hello");
+        let data = rb.read(0);
+        assert_eq!(&*data, b"hello");
+    }
+
+    #[test]
+    fn ring_buffer_write_exact_capacity() {
+        let mut rb = RingBuffer::new(8);
+        rb.write(b"12345678");
+        let data = rb.read(0);
+        assert_eq!(&*data, b"12345678");
+    }
+
+    #[test]
+    fn ring_buffer_write_exceeds_capacity() {
+        let mut rb = RingBuffer::new(8);
+        rb.write(b"0123456789ABCDEF"); // 16 bytes, twice capacity
+        let data = rb.read(0);
+        // only the last 8 bytes should remain
+        assert_eq!(&*data, b"89ABCDEF");
+    }
+
+    #[test]
+    fn ring_buffer_write_wraps_around() {
+        let mut rb = RingBuffer::new(8);
+        // write 6 bytes at pos 0..6: buffer = [a,b,c,d,e,f,_,_]
+        rb.write(b"abcdef");
+        // next write of 4 bytes: pos=6, wraps: buffer[6..8]="12", buffer[0..2]="34"
+        // buffer becomes: [3,4,c,d,e,f,1,2]
+        rb.write(b"1234");
+        let data = rb.read(0);
+        // readable = 10, capped at capacity 8, data = buffer[0..8]
+        assert_eq!(&*data, b"34cdef12");
+    }
+
+    #[test]
+    fn ring_buffer_read_wraps_around() {
+        let mut rb = RingBuffer::new(8);
+        // fill buffer then overwrite partially to create wrap
+        rb.write(b"01234567"); // 8 bytes, fills exactly
+        rb.write(b"ABCD");    // 4 bytes, wraps: pos 0..4
+        // Read from position 4 (where "4567ABCD" starts in ring)
+        let data = rb.read(4);
+        assert_eq!(&*data, b"4567ABCD");
+    }
+
+    #[test]
+    fn ring_buffer_read_at_offset() {
+        let mut rb = RingBuffer::new(16);
+        rb.write(b"abcdefghij");
+        let data = rb.read(3);
+        assert_eq!(&*data, b"defghij");
+    }
+
+    #[test]
+    fn ring_buffer_read_nothing_available() {
+        let rb = RingBuffer::new(16);
+        let data = rb.read(0);
+        assert!(data.is_empty());
+    }
+
+    #[test]
+    fn ring_buffer_current_position() {
+        let mut rb = RingBuffer::new(16);
+        assert_eq!(rb.current_position(), 0);
+        rb.write(b"hello");
+        assert_eq!(rb.current_position(), 5);
+        rb.write(b"world");
+        assert_eq!(rb.current_position(), 10);
+    }
+
+    #[test]
+    fn ring_buffer_capacity() {
+        let rb = RingBuffer::new(64);
+        assert_eq!(rb.capacity(), 64);
+    }
+
+    #[test]
+    fn ring_buffer_zero_len_write() {
+        let mut rb = RingBuffer::new(16);
+        rb.write(b"");
+        let data = rb.read(0);
+        assert!(data.is_empty());
+        assert_eq!(rb.current_position(), 0);
+    }
+}

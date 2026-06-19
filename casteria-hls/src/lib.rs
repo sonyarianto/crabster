@@ -243,3 +243,153 @@ impl HlsManager {
         })
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn session_with_short_duration() -> HlsSession {
+        HlsSession::new(
+            "/test".into(),
+            HlsConfig {
+                segment_duration: Duration::from_millis(1),
+                window_size: 3,
+                poll_interval: Duration::from_millis(100),
+            },
+        )
+    }
+
+    #[test]
+    fn seal_segment_noop_with_empty_data() {
+        let mut s = session_with_short_duration();
+        s.seal_segment();
+        assert!(s.segments.is_empty());
+        assert_eq!(s.segment_counter, 0);
+    }
+
+    #[test]
+    fn seal_segment_creates_segment() {
+        let mut s = session_with_short_duration();
+        s.feed(b"some audio data");
+        // feed with short duration triggers auto-seal, but to be safe wait a bit
+        std::thread::sleep(Duration::from_millis(2));
+        s.feed(b""); // no data, but resets start for next test
+        assert_eq!(s.segments.len(), 1);
+        assert_eq!(s.segment_counter, 1);
+        assert_eq!(s.segments[0].sequence, 0);
+        assert!(s.segments[0].duration >= 1.0);
+    }
+
+    #[test]
+    fn seal_segment_clamps_min_duration() {
+        let mut s = session_with_short_duration();
+        // call seal directly without waiting — elapsed will be ~0
+        s.current_data.extend_from_slice(b"data");
+        s.seal_segment();
+        assert_eq!(s.segments[0].duration, 1.0);
+    }
+
+    #[test]
+    fn seal_segment_respects_window_size() {
+        let mut s = HlsSession::new(
+            "/test".into(),
+            HlsConfig {
+                segment_duration: Duration::from_secs(10),
+                window_size: 3,
+                poll_interval: Duration::from_millis(100),
+            },
+        );
+        for i in 0..5 {
+            s.current_data.extend_from_slice(b"data");
+            s.seal_segment();
+            // after i+1 segments, window should never exceed 3
+            assert!(s.segments.len() <= 3, "iteration {i}: len {}", s.segments.len());
+        }
+        assert!(s.segments.len() == 3);
+        // with 5 writes and window 3, sequences should be 2, 3, 4
+        assert_eq!(s.segments[0].sequence, 2);
+        assert_eq!(s.segments[1].sequence, 3);
+        assert_eq!(s.segments[2].sequence, 4);
+    }
+
+    #[test]
+    fn get_playlist_empty() {
+        let s = session_with_short_duration();
+        let pl = s.get_playlist();
+        assert!(pl.contains("#EXTM3U"));
+        assert!(pl.contains("#EXT-X-VERSION:3"));
+        assert!(pl.contains("#EXT-X-MEDIA-SEQUENCE:0"));
+    }
+
+    #[test]
+    fn get_playlist_with_segments() {
+        let mut s = session_with_short_duration();
+        s.current_data.extend_from_slice(b"data");
+        s.seal_segment();
+        let pl = s.get_playlist();
+        assert!(pl.contains("#EXTINF:"));
+        assert!(pl.contains("segment-0.ts"));
+        assert!(pl.contains("#EXT-X-MEDIA-SEQUENCE:0"));
+    }
+
+    #[test]
+    fn get_playlist_target_duration() {
+        let s = HlsSession::new(
+            "/test".into(),
+            HlsConfig {
+                segment_duration: Duration::from_secs(12),
+                window_size: 5,
+                poll_interval: Duration::from_millis(100),
+            },
+        );
+        let pl = s.get_playlist();
+        assert!(pl.contains("#EXT-X-TARGETDURATION:12"));
+    }
+
+    #[test]
+    fn should_seal_false_with_no_data() {
+        let s = session_with_short_duration();
+        assert!(!s.should_seal());
+    }
+
+    #[test]
+    fn should_seal_true_with_data_and_elapsed() {
+        let mut s = session_with_short_duration();
+        s.current_data.extend_from_slice(b"data");
+        std::thread::sleep(Duration::from_millis(2));
+        assert!(s.should_seal());
+    }
+
+    #[test]
+    fn force_seal_noop_with_empty_data() {
+        let mut s = session_with_short_duration();
+        s.force_seal();
+        assert!(s.segments.is_empty());
+    }
+
+    #[test]
+    fn force_seal_creates_segment() {
+        let mut s = session_with_short_duration();
+        s.current_data.extend_from_slice(b"data");
+        s.force_seal();
+        assert_eq!(s.segments.len(), 1);
+    }
+
+    #[test]
+    fn has_segment_works() {
+        let mut s = session_with_short_duration();
+        s.current_data.extend_from_slice(b"data");
+        s.seal_segment();
+        assert!(s.has_segment(0));
+        assert!(!s.has_segment(1));
+    }
+
+    #[test]
+    fn get_segment_returns_data() {
+        let mut s = session_with_short_duration();
+        s.current_data.extend_from_slice(b"hello segment");
+        s.seal_segment();
+        let seg = s.get_segment(0).unwrap();
+        assert_eq!(&*seg, b"hello segment");
+    }
+}
