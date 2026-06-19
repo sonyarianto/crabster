@@ -1,0 +1,14 @@
+services:
+  casteria:
+    build: .
+    ports:
+      - "8000:8000"
+      - "8001:8001"
+    volumes:
+      - casteria_data:/data
+    environment:
+      - RUST_LOG=casteria=info
+    restart: unless-stopped
+
+volumes:
+  casteria_data:

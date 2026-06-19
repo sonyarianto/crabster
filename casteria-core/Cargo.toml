@@ -1,0 +1,41 @@
+[package]
+name = "casteria-core"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+
+[dependencies]
+tokio = { workspace = true }
+tower = { workspace = true }
+hyper = { workspace = true }
+serde = { workspace = true }
+serde_json = { workspace = true }
+tracing = { workspace = true }
+uuid = { workspace = true }
+chrono = { workspace = true }
+thiserror = { workspace = true }
+anyhow = { workspace = true }
+bytes = { workspace = true }
+parking_lot = { workspace = true }
+dashmap = { workspace = true }
+arc-swap = { workspace = true }
+
+# HTTP parsing
+httparse = "1"
+
+# Async 
+tokio-util = "0.7"
+
+# Encoding
+base64 = "0.22"
+
+# Config
+toml = "0.8"
+
+# HTTP client (for URL auth)
+reqwest = { version = "0.12", default-features = false, features = ["rustls-tls"] }
+
+# Async trait
+async-trait = "0.1"
+
+

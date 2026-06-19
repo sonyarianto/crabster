@@ -1,0 +1,69 @@
+[workspace]
+resolver = "2"
+members = [
+    "casteria-core",
+    "casteria-api",
+    "casteria-hls",
+    "casteria-analytics",
+    "casteria-health",
+    "casteria-cluster",
+"casteria-db",
+]
+
+[workspace.package]
+version = "0.1.0"
+edition = "2021"
+license = "MIT"
+
+[workspace.dependencies]
+tokio = { version = "1", features = ["full"] }
+axum = "0.8"
+tower = "0.5"
+tower-http = { version = "0.6", features = ["cors", "auth"] }
+hyper = "1"
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+tracing = "0.1"
+tracing-subscriber = { version = "0.3", features = ["env-filter"] }
+uuid = { version = "1", features = ["v4", "serde"] }
+chrono = { version = "0.4", features = ["serde"] }
+thiserror = "2"
+anyhow = "1"
+bytes = "1"
+parking_lot = "0.12"
+dashmap = "6"
+arc-swap = "1"
+rustls = "0.23"
+rustls-pemfile = "2"
+axum-extra = "0.10"
+
+[package]
+name = "casteria"
+version = "0.1.0"
+edition = "2021"
+
+[dependencies]
+casteria-core = { path = "casteria-core" }
+casteria-api = { path = "casteria-api" }
+casteria-db = { path = "casteria-db" }
+casteria-hls = { path = "casteria-hls" }
+casteria-analytics = { path = "casteria-analytics" }
+casteria-health = { path = "casteria-health" }
+casteria-cluster = { path = "casteria-cluster" }
+tokio = { workspace = true }
+tracing = { workspace = true }
+tracing-subscriber = { workspace = true }
+anyhow = { workspace = true }
+clap = { version = "4", features = ["derive"] }
+parking_lot = { workspace = true }
+uuid = { workspace = true }
+base64 = "0.22"
+serde = { workspace = true }
+serde_json = { workspace = true }
+toml = "0.8"
+axum = { workspace = true }
+tower-http = { workspace = true }
+
+[dev-dependencies]
+ureq = "3"
+portpicker = "0.1"

@@ -1,0 +1,20 @@
+pub mod config;
+pub mod source;
+pub mod listener;
+pub mod format;
+pub mod auth;
+pub mod admin;
+pub mod stats;
+pub mod relay;
+
+use std::sync::Arc;
+use tokio::sync::RwLock;
+
+pub type SharedState = Arc<AppState>;
+
+pub struct AppState {
+    pub config: RwLock<config::Config>,
+    pub sources: source::SourceManager,
+    pub stats: stats::StatsCollector,
+    pub format_registry: format::FormatRegistry,
+}
