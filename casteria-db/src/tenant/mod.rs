@@ -20,7 +20,15 @@ impl Database {
         conn.execute(
             "INSERT INTO accounts (id, name, email, plan, max_sources, max_listeners, max_bitrate)
              VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7)",
-            rusqlite::params![id, name, email, format!("{:?}", plan).to_lowercase(), sources, listeners, bitrate],
+            rusqlite::params![
+                id,
+                name,
+                email,
+                format!("{:?}", plan).to_lowercase(),
+                sources,
+                listeners,
+                bitrate
+            ],
         )?;
 
         Ok(Account {
@@ -94,28 +102,33 @@ impl Database {
              FROM accounts ORDER BY created_at DESC",
         )?;
 
-        let accounts = stmt.query_map([], |row| {
-            let plan_str: String = row.get(3)?;
-            let created_at_str: String = row.get(7)?;
-            let plan = match plan_str.to_lowercase().as_str() {
-                "pro" => AccountPlan::Pro,
-                "enterprise" => AccountPlan::Enterprise,
-                _ => AccountPlan::Free,
-            };
-            Ok(Account {
-                id: row.get(0)?,
-                name: row.get(1)?,
-                email: row.get(2)?,
-                plan,
-                max_sources: row.get(4)?,
-                max_listeners: row.get(5)?,
-                max_bitrate: row.get(6)?,
-                created_at: chrono::DateTime::parse_from_str(&created_at_str, "%Y-%m-%dT%H:%M:%S%.fZ")
+        let accounts = stmt
+            .query_map([], |row| {
+                let plan_str: String = row.get(3)?;
+                let created_at_str: String = row.get(7)?;
+                let plan = match plan_str.to_lowercase().as_str() {
+                    "pro" => AccountPlan::Pro,
+                    "enterprise" => AccountPlan::Enterprise,
+                    _ => AccountPlan::Free,
+                };
+                Ok(Account {
+                    id: row.get(0)?,
+                    name: row.get(1)?,
+                    email: row.get(2)?,
+                    plan,
+                    max_sources: row.get(4)?,
+                    max_listeners: row.get(5)?,
+                    max_bitrate: row.get(6)?,
+                    created_at: chrono::DateTime::parse_from_str(
+                        &created_at_str,
+                        "%Y-%m-%dT%H:%M:%S%.fZ",
+                    )
                     .map(|d| d.to_utc())
                     .unwrap_or_else(|_| chrono::Utc::now()),
-                active: row.get::<_, i32>(8)? != 0,
-            })
-        })?.collect::<Result<Vec<_>, _>>()?;
+                    active: row.get::<_, i32>(8)? != 0,
+                })
+            })?
+            .collect::<Result<Vec<_>, _>>()?;
 
         Ok(accounts)
     }
@@ -200,26 +213,31 @@ impl Database {
              FROM users WHERE account_id = ?1 ORDER BY created_at DESC",
         )?;
 
-        let users = stmt.query_map(rusqlite::params![account_id], |row| {
-            let role_str: String = row.get(4)?;
-            let created_at_str: String = row.get(5)?;
-            let role = match role_str.to_lowercase().as_str() {
-                "admin" => UserRole::Admin,
-                "operator" => UserRole::Operator,
-                _ => UserRole::Listener,
-            };
-            Ok(User {
-                id: row.get(0)?,
-                account_id: row.get(1)?,
-                username: row.get(2)?,
-                password_hash: row.get(3)?,
-                role,
-                created_at: chrono::DateTime::parse_from_str(&created_at_str, "%Y-%m-%dT%H:%M:%S%.fZ")
+        let users = stmt
+            .query_map(rusqlite::params![account_id], |row| {
+                let role_str: String = row.get(4)?;
+                let created_at_str: String = row.get(5)?;
+                let role = match role_str.to_lowercase().as_str() {
+                    "admin" => UserRole::Admin,
+                    "operator" => UserRole::Operator,
+                    _ => UserRole::Listener,
+                };
+                Ok(User {
+                    id: row.get(0)?,
+                    account_id: row.get(1)?,
+                    username: row.get(2)?,
+                    password_hash: row.get(3)?,
+                    role,
+                    created_at: chrono::DateTime::parse_from_str(
+                        &created_at_str,
+                        "%Y-%m-%dT%H:%M:%S%.fZ",
+                    )
                     .map(|d| d.to_utc())
                     .unwrap_or_else(|_| chrono::Utc::now()),
-                active: row.get::<_, i32>(6)? != 0,
-            })
-        })?.collect::<Result<Vec<_>, _>>()?;
+                    active: row.get::<_, i32>(6)? != 0,
+                })
+            })?
+            .collect::<Result<Vec<_>, _>>()?;
 
         Ok(users)
     }
@@ -262,21 +280,26 @@ impl Database {
              FROM stations WHERE account_id = ?1 ORDER BY created_at DESC",
         )?;
 
-        let stations = stmt.query_map(rusqlite::params![account_id], |row| {
-            let created_at_str: String = row.get(6)?;
-            Ok(Station {
-                id: row.get(0)?,
-                account_id: row.get(1)?,
-                name: row.get(2)?,
-                description: row.get(3)?,
-                genre: row.get(4)?,
-                website: row.get(5)?,
-                created_at: chrono::DateTime::parse_from_str(&created_at_str, "%Y-%m-%dT%H:%M:%S%.fZ")
+        let stations = stmt
+            .query_map(rusqlite::params![account_id], |row| {
+                let created_at_str: String = row.get(6)?;
+                Ok(Station {
+                    id: row.get(0)?,
+                    account_id: row.get(1)?,
+                    name: row.get(2)?,
+                    description: row.get(3)?,
+                    genre: row.get(4)?,
+                    website: row.get(5)?,
+                    created_at: chrono::DateTime::parse_from_str(
+                        &created_at_str,
+                        "%Y-%m-%dT%H:%M:%S%.fZ",
+                    )
                     .map(|d| d.to_utc())
                     .unwrap_or_else(|_| chrono::Utc::now()),
-                active: row.get::<_, i32>(7)? != 0,
-            })
-        })?.collect::<Result<Vec<_>, _>>()?;
+                    active: row.get::<_, i32>(7)? != 0,
+                })
+            })?
+            .collect::<Result<Vec<_>, _>>()?;
 
         Ok(stations)
     }
@@ -369,28 +392,33 @@ impl Database {
              FROM mount_configs WHERE account_id = ?1 ORDER BY created_at DESC",
         )?;
 
-        let configs = stmt.query_map(rusqlite::params![account_id], |row| {
-            let created_at_str: String = row.get(13)?;
-            Ok(MountConfig {
-                id: row.get(0)?,
-                station_id: row.get(1)?,
-                account_id: row.get(2)?,
-                mount_name: row.get(3)?,
-                source_password: row.get(4)?,
-                max_listeners: row.get(5)?,
-                bitrate: row.get(6)?,
-                format: row.get(7)?,
-                public: row.get::<_, i32>(8)? != 0,
-                hidden: row.get::<_, i32>(9)? != 0,
-                fallback_mount: row.get(10)?,
-                fallback_when_full: row.get::<_, i32>(11)? != 0,
-                fallback_override: row.get::<_, i32>(12)? != 0,
-                created_at: chrono::DateTime::parse_from_str(&created_at_str, "%Y-%m-%dT%H:%M:%S%.fZ")
+        let configs = stmt
+            .query_map(rusqlite::params![account_id], |row| {
+                let created_at_str: String = row.get(13)?;
+                Ok(MountConfig {
+                    id: row.get(0)?,
+                    station_id: row.get(1)?,
+                    account_id: row.get(2)?,
+                    mount_name: row.get(3)?,
+                    source_password: row.get(4)?,
+                    max_listeners: row.get(5)?,
+                    bitrate: row.get(6)?,
+                    format: row.get(7)?,
+                    public: row.get::<_, i32>(8)? != 0,
+                    hidden: row.get::<_, i32>(9)? != 0,
+                    fallback_mount: row.get(10)?,
+                    fallback_when_full: row.get::<_, i32>(11)? != 0,
+                    fallback_override: row.get::<_, i32>(12)? != 0,
+                    created_at: chrono::DateTime::parse_from_str(
+                        &created_at_str,
+                        "%Y-%m-%dT%H:%M:%S%.fZ",
+                    )
                     .map(|d| d.to_utc())
                     .unwrap_or_else(|_| chrono::Utc::now()),
-                active: row.get::<_, i32>(14)? != 0,
-            })
-        })?.collect::<Result<Vec<_>, _>>()?;
+                    active: row.get::<_, i32>(14)? != 0,
+                })
+            })?
+            .collect::<Result<Vec<_>, _>>()?;
 
         Ok(configs)
     }
@@ -405,10 +433,7 @@ impl Database {
         Ok(count)
     }
 
-    pub fn check_account_quota(
-        &self,
-        account_id: &str,
-    ) -> Result<(bool, String), anyhow::Error> {
+    pub fn check_account_quota(&self, account_id: &str) -> Result<(bool, String), anyhow::Error> {
         let account = self
             .get_account(account_id)?
             .ok_or_else(|| anyhow::anyhow!("account not found"))?;

@@ -47,7 +47,11 @@ pub fn verify_jwt(token: &str) -> Result<JwtClaims, anyhow::Error> {
     Ok(data.claims)
 }
 
-pub fn authenticate(db: &Database, username: &str, password: &str) -> Result<(User, String, String), anyhow::Error> {
+pub fn authenticate(
+    db: &Database,
+    username: &str,
+    password: &str,
+) -> Result<(User, String, String), anyhow::Error> {
     let conn = db.conn();
 
     let mut stmt = conn.prepare(
@@ -55,39 +59,41 @@ pub fn authenticate(db: &Database, username: &str, password: &str) -> Result<(Us
          FROM users u WHERE u.username = ?1 AND u.active = 1",
     )?;
 
-    let user = stmt.query_row(rusqlite::params![username], |row| {
-        let id: String = row.get(0)?;
-        let account_id: String = row.get(1)?;
-        let username: String = row.get(2)?;
-        let password_hash: String = row.get(3)?;
-        let role_str: String = row.get(4)?;
-        let created_at_str: String = row.get(5)?;
-        let active: bool = row.get::<_, i32>(6)? != 0;
+    let user = stmt
+        .query_row(rusqlite::params![username], |row| {
+            let id: String = row.get(0)?;
+            let account_id: String = row.get(1)?;
+            let username: String = row.get(2)?;
+            let password_hash: String = row.get(3)?;
+            let role_str: String = row.get(4)?;
+            let created_at_str: String = row.get(5)?;
+            let active: bool = row.get::<_, i32>(6)? != 0;
 
-        let role = match role_str.to_lowercase().as_str() {
-            "admin" => UserRole::Admin,
-            "operator" => UserRole::Operator,
-            _ => UserRole::Listener,
-        };
+            let role = match role_str.to_lowercase().as_str() {
+                "admin" => UserRole::Admin,
+                "operator" => UserRole::Operator,
+                _ => UserRole::Listener,
+            };
 
-        Ok((
-            User {
-                id,
-                account_id: account_id.clone(),
-                username,
-                password_hash,
-                role,
-                created_at: chrono::DateTime::parse_from_str(
-                    &created_at_str,
-                    "%Y-%m-%dT%H:%M:%S%.fZ",
-                )
-                .map(|d| d.to_utc())
-                .unwrap_or_else(|_| chrono::Utc::now()),
-                active,
-            },
-            account_id,
-        ))
-    }).map_err(|_| anyhow::anyhow!("invalid credentials"))?;
+            Ok((
+                User {
+                    id,
+                    account_id: account_id.clone(),
+                    username,
+                    password_hash,
+                    role,
+                    created_at: chrono::DateTime::parse_from_str(
+                        &created_at_str,
+                        "%Y-%m-%dT%H:%M:%S%.fZ",
+                    )
+                    .map(|d| d.to_utc())
+                    .unwrap_or_else(|_| chrono::Utc::now()),
+                    active,
+                },
+                account_id,
+            ))
+        })
+        .map_err(|_| anyhow::anyhow!("invalid credentials"))?;
 
     let (user, account_id) = user;
 
@@ -103,11 +109,7 @@ pub fn authenticate(db: &Database, username: &str, password: &str) -> Result<(Us
 pub fn register_default_admin(db: &Database) -> Result<(), anyhow::Error> {
     let conn = db.conn();
 
-    let count: i64 = conn.query_row(
-        "SELECT COUNT(*) FROM accounts",
-        [],
-        |row| row.get(0),
-    )?;
+    let count: i64 = conn.query_row("SELECT COUNT(*) FROM accounts", [], |row| row.get(0))?;
 
     if count > 0 {
         return Ok(());
@@ -120,7 +122,15 @@ pub fn register_default_admin(db: &Database) -> Result<(), anyhow::Error> {
     conn.execute(
         "INSERT INTO accounts (id, name, email, plan, max_sources, max_listeners, max_bitrate)
          VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7)",
-        rusqlite::params![account_id, "Default Account", "admin@casteria.local", "enterprise", 50, 10000, 320],
+        rusqlite::params![
+            account_id,
+            "Default Account",
+            "admin@casteria.local",
+            "enterprise",
+            50,
+            10000,
+            320
+        ],
     )?;
 
     conn.execute(

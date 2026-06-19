@@ -47,10 +47,7 @@ impl HealthChecker {
         &self.alerts
     }
 
-    pub fn check(
-        &self,
-        core: &casteria_core::SharedState,
-    ) -> Vec<HealthStatus> {
+    pub fn check(&self, core: &casteria_core::SharedState) -> Vec<HealthStatus> {
         let sources = core.sources.all_sources();
         let mut statuses = Vec::new();
 
@@ -114,7 +111,9 @@ impl HealthChecker {
                 if mins > 10 {
                     self.alerts.raise(
                         AlertSeverity::Warning,
-                        AlertTrigger::MetadataStale { minutes: mins as u32 },
+                        AlertTrigger::MetadataStale {
+                            minutes: mins as u32,
+                        },
                         &mount,
                         format!("Metadata not updated on {} in {} minutes", mount, mins),
                     );
@@ -126,7 +125,11 @@ impl HealthChecker {
                     AlertSeverity::Warning,
                     AlertTrigger::ListenerDropSpike { rate: drop_rate },
                     &mount,
-                    format!("Listener drop on {}: {:.0}% drop rate", mount, drop_rate * 100.0),
+                    format!(
+                        "Listener drop on {}: {:.0}% drop rate",
+                        mount,
+                        drop_rate * 100.0
+                    ),
                 );
             }
 
@@ -172,10 +175,7 @@ impl HealthChecker {
         statuses
     }
 
-    pub fn start(
-        self: Arc<Self>,
-        core: casteria_core::SharedState,
-    ) -> tokio::task::JoinHandle<()> {
+    pub fn start(self: Arc<Self>, core: casteria_core::SharedState) -> tokio::task::JoinHandle<()> {
         tokio::spawn(async move {
             let mut interval = tokio::time::interval(tokio::time::Duration::from_secs(10));
             loop {

@@ -1,11 +1,11 @@
-pub mod config;
-pub mod source;
-pub mod listener;
-pub mod format;
-pub mod auth;
 pub mod admin;
-pub mod stats;
+pub mod auth;
+pub mod config;
+pub mod format;
+pub mod listener;
 pub mod relay;
+pub mod source;
+pub mod stats;
 
 use std::sync::Arc;
 use tokio::sync::RwLock;

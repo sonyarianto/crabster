@@ -60,7 +60,10 @@ pub async fn run_with_config(
             Some(db)
         }
         Err(e) => {
-            warn!("Database unavailable ({}), running without multi-tenant support", e);
+            warn!(
+                "Database unavailable ({}), running without multi-tenant support",
+                e
+            );
             None
         }
     };
@@ -80,9 +83,9 @@ pub async fn run_with_config(
         Arc::clone(&core_state),
     );
 
-    let health_checker = Arc::new(casteria_health::checker::HealthChecker::new(
-        Arc::new(casteria_health::alerts::AlertEngine::new(1000)),
-    ));
+    let health_checker = Arc::new(casteria_health::checker::HealthChecker::new(Arc::new(
+        casteria_health::alerts::AlertEngine::new(1000),
+    )));
     let _health_handle = health_checker.clone().start(Arc::clone(&core_state));
 
     let hls_manager = Arc::new(casteria_hls::HlsManager::new(
@@ -229,14 +232,18 @@ async fn handle_connection(
         "GET" | "HEAD" => handle_get(path, &headers_map, writer, state).await,
         "POST" => handle_post(path, &headers_map, buf_reader, writer, state).await,
         _ => {
-            let _ = writer.write_all(b"HTTP/1.0 501 Not Implemented\r\n\r\n").await;
+            let _ = writer
+                .write_all(b"HTTP/1.0 501 Not Implemented\r\n\r\n")
+                .await;
         }
     }
 
     Ok(())
 }
 
-fn extract_basic_auth(headers: &std::collections::HashMap<String, String>) -> Option<(String, String)> {
+fn extract_basic_auth(
+    headers: &std::collections::HashMap<String, String>,
+) -> Option<(String, String)> {
     headers.get("authorization").and_then(|auth| {
         if auth.starts_with("Basic ") {
             let encoded = auth.trim_start_matches("Basic ");
@@ -358,7 +365,10 @@ async fn handle_source(
         running: std::sync::atomic::AtomicBool::new(true),
     });
 
-    if !state.sources.register(mount.to_string(), Arc::clone(&source)) {
+    if !state
+        .sources
+        .register(mount.to_string(), Arc::clone(&source))
+    {
         let _ = writer
             .write_all(b"HTTP/1.0 503 Service Unavailable\r\n\r\n")
             .await;
@@ -388,8 +398,12 @@ async fn handle_source(
         }
     }
 
-    source.connected.store(false, std::sync::atomic::Ordering::Relaxed);
-    source.running.store(false, std::sync::atomic::Ordering::Relaxed);
+    source
+        .connected
+        .store(false, std::sync::atomic::Ordering::Relaxed);
+    source
+        .running
+        .store(false, std::sync::atomic::Ordering::Relaxed);
     state.sources.unregister(mount);
     info!("Source disconnected: {}", mount);
 }
@@ -418,7 +432,10 @@ async fn handle_get(
         let body = if path == "/status-json.xsl" {
             xml.to_string()
         } else {
-            format!("<html><body><h1>Casteria</h1><pre>{}</pre></body></html>", xml)
+            format!(
+                "<html><body><h1>Casteria</h1><pre>{}</pre></body></html>",
+                xml
+            )
         };
         let content_type = if path == "/status-json.xsl" {
             "application/json"
@@ -461,7 +478,9 @@ async fn handle_get(
         let meta = source.info.metadata.read();
         (
             meta.icy_br.unwrap_or(128),
-            meta.icy_name.clone().unwrap_or_else(|| "Casteria Stream".into()),
+            meta.icy_name
+                .clone()
+                .unwrap_or_else(|| "Casteria Stream".into()),
             meta.icy_genre.clone().unwrap_or_else(|| "Various".into()),
             meta.icy_url.clone().unwrap_or_default(),
             if source.info.public { "1" } else { "0" },
@@ -560,7 +579,11 @@ async fn handle_legacy_admin(
             format!(
                 "HTTP/1.0 {} {}\r\nContent-Type: {}\r\nContent-Length: {}\r\n\r\n{}",
                 response.status,
-                if response.status == 200 { "OK" } else { "Error" },
+                if response.status == 200 {
+                    "OK"
+                } else {
+                    "Error"
+                },
                 response.content_type,
                 response.body.len(),
                 response.body

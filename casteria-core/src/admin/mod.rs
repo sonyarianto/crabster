@@ -109,11 +109,18 @@ pub fn handle_admin_command(
 </icestats>"#;
             AdminResponse::xml(200, xml.to_string())
         }
-        AdminCommand::KickClient => AdminResponse::xml(200, "<icestats><kickclient>success</kickclient></icestats>".into()),
-        AdminCommand::MoveClients => AdminResponse::xml(200, "<icestats><moveclients>success</moveclients></icestats>".into()),
-        AdminCommand::UpdateMetadata | AdminCommand::Metadata => {
-            AdminResponse::xml(200, "<icestats><metadata>success</metadata></icestats>".into())
-        }
+        AdminCommand::KickClient => AdminResponse::xml(
+            200,
+            "<icestats><kickclient>success</kickclient></icestats>".into(),
+        ),
+        AdminCommand::MoveClients => AdminResponse::xml(
+            200,
+            "<icestats><moveclients>success</moveclients></icestats>".into(),
+        ),
+        AdminCommand::UpdateMetadata | AdminCommand::Metadata => AdminResponse::xml(
+            200,
+            "<icestats><metadata>success</metadata></icestats>".into(),
+        ),
         AdminCommand::ListMounts => {
             let xml = r#"<?xml version="1.0"?>
 <icestats>

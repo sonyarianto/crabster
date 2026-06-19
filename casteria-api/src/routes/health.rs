@@ -12,7 +12,10 @@ pub async fn get_health_status(
     State(state): State<SharedApiState>,
 ) -> Result<Json<Value>, (StatusCode, Json<Value>)> {
     let health_checker = state.health.as_ref().ok_or_else(|| {
-        (StatusCode::SERVICE_UNAVAILABLE, Json(json!({"error": "health monitoring not available"})))
+        (
+            StatusCode::SERVICE_UNAVAILABLE,
+            Json(json!({"error": "health monitoring not available"})),
+        )
     })?;
 
     let core = &state.core;
@@ -55,7 +58,10 @@ pub async fn get_alerts(
     State(state): State<SharedApiState>,
 ) -> Result<Json<Value>, (StatusCode, Json<Value>)> {
     let health_checker = state.health.as_ref().ok_or_else(|| {
-        (StatusCode::SERVICE_UNAVAILABLE, Json(json!({"error": "health monitoring not available"})))
+        (
+            StatusCode::SERVICE_UNAVAILABLE,
+            Json(json!({"error": "health monitoring not available"})),
+        )
     })?;
 
     let alerts = health_checker.alerts();
@@ -67,11 +73,17 @@ pub async fn acknowledge_alert(
     Path(id): Path<String>,
 ) -> Result<Json<Value>, (StatusCode, Json<Value>)> {
     let health_checker = state.health.as_ref().ok_or_else(|| {
-        (StatusCode::SERVICE_UNAVAILABLE, Json(json!({"error": "health monitoring not available"})))
+        (
+            StatusCode::SERVICE_UNAVAILABLE,
+            Json(json!({"error": "health monitoring not available"})),
+        )
     })?;
 
     let id = Uuid::parse_str(&id).map_err(|_| {
-        (StatusCode::BAD_REQUEST, Json(json!({"error": "invalid alert id"})))
+        (
+            StatusCode::BAD_REQUEST,
+            Json(json!({"error": "invalid alert id"})),
+        )
     })?;
 
     health_checker.alert_engine().acknowledge(&id);

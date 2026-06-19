@@ -19,7 +19,10 @@ pub async fn get_concurrent(
     Query(q): Query<AnalyticsQuery>,
 ) -> Result<Json<Value>, (StatusCode, Json<Value>)> {
     let analytics = state.analytics.as_ref().ok_or_else(|| {
-        (StatusCode::SERVICE_UNAVAILABLE, Json(json!({"error": "analytics not available"})))
+        (
+            StatusCode::SERVICE_UNAVAILABLE,
+            Json(json!({"error": "analytics not available"})),
+        )
     })?;
 
     let seconds = q.seconds.unwrap_or(300).min(3600);
@@ -55,7 +58,10 @@ pub async fn get_peak(
     Query(q): Query<AnalyticsQuery>,
 ) -> Result<Json<Value>, (StatusCode, Json<Value>)> {
     let analytics = state.analytics.as_ref().ok_or_else(|| {
-        (StatusCode::SERVICE_UNAVAILABLE, Json(json!({"error": "analytics not available"})))
+        (
+            StatusCode::SERVICE_UNAVAILABLE,
+            Json(json!({"error": "analytics not available"})),
+        )
     })?;
 
     let result = if let Some(mount) = &q.mount {
@@ -95,7 +101,10 @@ pub async fn get_devices(
     Query(q): Query<AnalyticsQuery>,
 ) -> Result<Json<Value>, (StatusCode, Json<Value>)> {
     let analytics = state.analytics.as_ref().ok_or_else(|| {
-        (StatusCode::SERVICE_UNAVAILABLE, Json(json!({"error": "analytics not available"})))
+        (
+            StatusCode::SERVICE_UNAVAILABLE,
+            Json(json!({"error": "analytics not available"})),
+        )
     })?;
 
     let result = if let Some(mount) = &q.mount {
@@ -139,7 +148,10 @@ pub async fn get_referrers(
     Query(q): Query<AnalyticsQuery>,
 ) -> Result<Json<Value>, (StatusCode, Json<Value>)> {
     let analytics = state.analytics.as_ref().ok_or_else(|| {
-        (StatusCode::SERVICE_UNAVAILABLE, Json(json!({"error": "analytics not available"})))
+        (
+            StatusCode::SERVICE_UNAVAILABLE,
+            Json(json!({"error": "analytics not available"})),
+        )
     })?;
 
     let result = if let Some(mount) = &q.mount {
@@ -149,7 +161,10 @@ pub async fn get_referrers(
                 let sorted: Vec<Value> = {
                     let mut pairs: Vec<_> = referrers.into_iter().collect();
                     pairs.sort_by(|a, b| b.1.cmp(&a.1));
-                    pairs.into_iter().map(|(k, v)| json!({ "referrer": k, "count": v })).collect()
+                    pairs
+                        .into_iter()
+                        .map(|(k, v)| json!({ "referrer": k, "count": v }))
+                        .collect()
                 };
                 json!({ "mount": mount, "referrers": sorted })
             }

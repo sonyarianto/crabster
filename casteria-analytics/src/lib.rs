@@ -1,5 +1,5 @@
-pub mod metrics;
 pub mod collector;
+pub mod metrics;
 
 use std::sync::Arc;
 
@@ -7,8 +7,8 @@ use chrono::Utc;
 use dashmap::DashMap;
 use parking_lot::RwLock;
 
-pub use metrics::*;
 pub use collector::*;
+pub use metrics::*;
 
 pub struct AnalyticsCollector {
     per_mount: DashMap<String, Arc<RwLock<MountAnalytics>>>,
@@ -36,7 +36,10 @@ impl AnalyticsCollector {
     }
 
     pub fn all_mounts(&self) -> Vec<Arc<RwLock<MountAnalytics>>> {
-        self.per_mount.iter().map(|r| Arc::clone(&r.value())).collect()
+        self.per_mount
+            .iter()
+            .map(|r| Arc::clone(&r.value()))
+            .collect()
     }
 
     pub fn remove_mount(&self, mount: &str) {
@@ -90,13 +93,22 @@ impl AnalyticsCollector {
 
 fn classify_user_agent(ua: &str) -> String {
     let ua = ua.to_lowercase();
-    if ua.contains("iphone") || ua.contains("ipad") || ua.contains("android") && !ua.contains("tv") {
+    if ua.contains("iphone") || ua.contains("ipad") || ua.contains("android") && !ua.contains("tv")
+    {
         "mobile".into()
-    } else if ua.contains("smarttv") || ua.contains("tv") || ua.contains("roku") || ua.contains("firetv") {
+    } else if ua.contains("smarttv")
+        || ua.contains("tv")
+        || ua.contains("roku")
+        || ua.contains("firetv")
+    {
         "tv".into()
     } else if ua.contains("bot") || ua.contains("crawler") || ua.contains("spider") {
         "bot".into()
-    } else if ua.contains("vlc") || ua.contains("mpv") || ua.contains("ffmpeg") || ua.contains("mplayer") {
+    } else if ua.contains("vlc")
+        || ua.contains("mpv")
+        || ua.contains("ffmpeg")
+        || ua.contains("mplayer")
+    {
         "media-player".into()
     } else if ua.contains("icecast") || ua.contains("liquidsoap") || ua.contains("butt") {
         "encoder".into()

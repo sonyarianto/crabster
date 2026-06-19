@@ -143,7 +143,8 @@ impl HlsSession {
     }
 
     pub fn should_seal(&self) -> bool {
-        !self.current_data.is_empty() && self.current_start.elapsed() >= self.config.segment_duration
+        !self.current_data.is_empty()
+            && self.current_start.elapsed() >= self.config.segment_duration
     }
 }
 
@@ -231,8 +232,7 @@ impl HlsManager {
                 let stale_mounts: Vec<String> = sessions
                     .iter()
                     .filter(|(_, s)| {
-                        core.sources.get(s.mount()).is_none()
-                            && s.is_stale(Duration::from_secs(60))
+                        core.sources.get(s.mount()).is_none() && s.is_stale(Duration::from_secs(60))
                     })
                     .map(|(k, _)| k.clone())
                     .collect();

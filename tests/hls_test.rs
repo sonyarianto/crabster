@@ -33,9 +33,7 @@ async fn test_hls_playlist_after_source() {
         tokio::time::sleep(Duration::from_millis(500)).await;
 
         // Source manager stores as "/hls-test.mp3"
-        let hls_start = server
-            .api_get("/api/v1/hls/hls-test.mp3/start")
-            .await;
+        let hls_start = server.api_get("/api/v1/hls/hls-test.mp3/start").await;
         assert!(
             hls_start.unwrap().contains("ok"),
             "HLS start should return ok"
@@ -49,7 +47,10 @@ async fn test_hls_playlist_after_source() {
             .api_get("/api/v1/hls/hls-test.mp3/playlist.m3u8")
             .await
             .unwrap();
-        assert!(playlist.contains("#EXTM3U"), "Should have M3U header: {playlist}");
+        assert!(
+            playlist.contains("#EXTM3U"),
+            "Should have M3U header: {playlist}"
+        );
         assert!(
             playlist.contains(".ts"),
             "Playlist should reference segments: {playlist}"

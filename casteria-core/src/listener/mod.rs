@@ -75,10 +75,7 @@ impl ListenerManager {
     }
 
     pub fn listener_count(&self, mount: &str) -> usize {
-        self.listeners
-            .get(mount)
-            .map(|e| e.len())
-            .unwrap_or(0)
+        self.listeners.get(mount).map(|e| e.len()).unwrap_or(0)
     }
 
     pub fn total_count(&self) -> u64 {
@@ -139,8 +136,9 @@ impl ListenerManager {
                 if listener.disconnected.load(Ordering::Relaxed) {
                     continue;
                 }
-                if let Err(_) =
-                    listener.sender.send(ListenerEvent::Metadata(Arc::clone(&metadata)))
+                if let Err(_) = listener
+                    .sender
+                    .send(ListenerEvent::Metadata(Arc::clone(&metadata)))
                 {
                     listener.disconnected.store(true, Ordering::Relaxed);
                 }

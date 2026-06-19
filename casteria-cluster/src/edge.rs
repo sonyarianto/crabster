@@ -65,7 +65,11 @@ impl EdgeNode {
                             }
 
                             if !response_line.contains("200") {
-                                warn!("Origin returned non-200 for {}: {}", mount, response_line.trim());
+                                warn!(
+                                    "Origin returned non-200 for {}: {}",
+                                    mount,
+                                    response_line.trim()
+                                );
                                 tokio::time::sleep(tokio::time::Duration::from_secs(10)).await;
                                 continue;
                             }
@@ -92,7 +96,9 @@ impl EdgeNode {
                                 connected_at: std::time::Instant::now(),
                                 client_ip: format!("{}:{}", origin_host, origin_port),
                                 user_agent: "Casteria-Edge/0.1.0".into(),
-                                format: casteria_core::format::FormatType::from_content_type("application/octet-stream"),
+                                format: casteria_core::format::FormatType::from_content_type(
+                                    "application/octet-stream",
+                                ),
                                 audio_info: Default::default(),
                                 bitrate: None,
                                 quality: None,
@@ -143,7 +149,10 @@ impl EdgeNode {
                             tokio::time::sleep(tokio::time::Duration::from_secs(5)).await;
                         }
                         Err(e) => {
-                            warn!("Edge connection failed to {}:{}: {}", origin_host, origin_port, e);
+                            warn!(
+                                "Edge connection failed to {}:{}: {}",
+                                origin_host, origin_port, e
+                            );
                             tokio::time::sleep(tokio::time::Duration::from_secs(10)).await;
                         }
                     }

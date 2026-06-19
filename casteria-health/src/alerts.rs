@@ -47,7 +47,13 @@ impl AlertEngine {
         }
     }
 
-    pub fn raise(&self, severity: AlertSeverity, trigger: AlertTrigger, mount: &str, message: String) {
+    pub fn raise(
+        &self,
+        severity: AlertSeverity,
+        trigger: AlertTrigger,
+        mount: &str,
+        message: String,
+    ) {
         let mut alerts = self.alerts.write();
         if alerts.len() >= self.max_alerts {
             alerts.pop_front();

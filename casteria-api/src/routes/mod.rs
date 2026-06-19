@@ -65,9 +65,15 @@ pub async fn get_status(
         version: env!("CARGO_PKG_VERSION").to_string(),
         uptime_seconds: global.started_at.elapsed().as_secs(),
         sources_active: core.sources.count(),
-        listeners_total: global.current_listeners.load(std::sync::atomic::Ordering::Relaxed),
-        bytes_sent: global.total_bytes_sent.load(std::sync::atomic::Ordering::Relaxed),
-        bytes_received: global.total_bytes_received.load(std::sync::atomic::Ordering::Relaxed),
+        listeners_total: global
+            .current_listeners
+            .load(std::sync::atomic::Ordering::Relaxed),
+        bytes_sent: global
+            .total_bytes_sent
+            .load(std::sync::atomic::Ordering::Relaxed),
+        bytes_received: global
+            .total_bytes_received
+            .load(std::sync::atomic::Ordering::Relaxed),
     }))
 }
 
@@ -84,7 +90,10 @@ pub async fn get_mount(
     Path(mount): Path<String>,
 ) -> Result<Json<MountResponse>, (StatusCode, Json<Value>)> {
     let source = state.core.sources.get(&mount).ok_or_else(|| {
-        (StatusCode::NOT_FOUND, Json(json!({"error": "mount not found"})))
+        (
+            StatusCode::NOT_FOUND,
+            Json(json!({"error": "mount not found"})),
+        )
     })?;
     Ok(Json(source_to_mount(&source)))
 }
@@ -94,7 +103,10 @@ pub async fn get_mount_listeners(
     Path(mount): Path<String>,
 ) -> Result<Json<ListenerSummary>, (StatusCode, Json<Value>)> {
     let source = state.core.sources.get(&mount).ok_or_else(|| {
-        (StatusCode::NOT_FOUND, Json(json!({"error": "mount not found"})))
+        (
+            StatusCode::NOT_FOUND,
+            Json(json!({"error": "mount not found"})),
+        )
     })?;
 
     let listener_count = source.info.stats.read().current_listeners;
@@ -117,12 +129,24 @@ pub async fn get_stats(
     Ok(Json(StatsResponse {
         server_started: String::new(),
         sources_active: core.sources.count(),
-        listeners_total: global.current_listeners.load(std::sync::atomic::Ordering::Relaxed),
-        peak_listeners: global.peak_listeners.load(std::sync::atomic::Ordering::Relaxed),
-        bytes_sent: global.total_bytes_sent.load(std::sync::atomic::Ordering::Relaxed),
-        bytes_received: global.total_bytes_received.load(std::sync::atomic::Ordering::Relaxed),
-        total_connections: global.total_connections.load(std::sync::atomic::Ordering::Relaxed),
-        total_source_connections: global.total_source_connections.load(std::sync::atomic::Ordering::Relaxed),
+        listeners_total: global
+            .current_listeners
+            .load(std::sync::atomic::Ordering::Relaxed),
+        peak_listeners: global
+            .peak_listeners
+            .load(std::sync::atomic::Ordering::Relaxed),
+        bytes_sent: global
+            .total_bytes_sent
+            .load(std::sync::atomic::Ordering::Relaxed),
+        bytes_received: global
+            .total_bytes_received
+            .load(std::sync::atomic::Ordering::Relaxed),
+        total_connections: global
+            .total_connections
+            .load(std::sync::atomic::Ordering::Relaxed),
+        total_source_connections: global
+            .total_source_connections
+            .load(std::sync::atomic::Ordering::Relaxed),
         mounts,
     }))
 }
@@ -150,5 +174,3 @@ pub async fn get_sources(
 
     Ok(Json(responses))
 }
-
-

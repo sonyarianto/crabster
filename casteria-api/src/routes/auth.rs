@@ -23,15 +23,12 @@ pub async fn login(
     State(state): State<SharedApiState>,
     Json(req): Json<LoginRequest>,
 ) -> Result<Json<LoginResponse>, (StatusCode, Json<Value>)> {
-    let db = state
-        .db
-        .as_ref()
-        .ok_or_else(|| {
-            (
-                StatusCode::SERVICE_UNAVAILABLE,
-                Json(json!({"error": "database not available"})),
-            )
-        })?;
+    let db = state.db.as_ref().ok_or_else(|| {
+        (
+            StatusCode::SERVICE_UNAVAILABLE,
+            Json(json!({"error": "database not available"})),
+        )
+    })?;
 
     match casteria_db::auth::authenticate(db, &req.username, &req.password) {
         Ok((user, account_id, token)) => Ok(Json(LoginResponse {

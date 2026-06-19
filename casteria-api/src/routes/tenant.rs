@@ -49,7 +49,10 @@ pub async fn list_accounts(
     State(state): State<SharedApiState>,
 ) -> Result<Json<Vec<AccountResponse>>, (StatusCode, Json<Value>)> {
     let db = state.db.as_ref().ok_or_else(|| {
-        (StatusCode::SERVICE_UNAVAILABLE, Json(json!({"error": "database not available"})))
+        (
+            StatusCode::SERVICE_UNAVAILABLE,
+            Json(json!({"error": "database not available"})),
+        )
     })?;
 
     match db.list_accounts() {
@@ -57,7 +60,10 @@ pub async fn list_accounts(
             let resp: Vec<AccountResponse> = accounts.into_iter().map(Into::into).collect();
             Ok(Json(resp))
         }
-        Err(e) => Err((StatusCode::INTERNAL_SERVER_ERROR, Json(json!({"error": e.to_string()}))))
+        Err(e) => Err((
+            StatusCode::INTERNAL_SERVER_ERROR,
+            Json(json!({"error": e.to_string()})),
+        )),
     }
 }
 
@@ -66,7 +72,10 @@ pub async fn create_account(
     Json(req): Json<CreateAccountRequest>,
 ) -> Result<Json<AccountResponse>, (StatusCode, Json<Value>)> {
     let db = state.db.as_ref().ok_or_else(|| {
-        (StatusCode::SERVICE_UNAVAILABLE, Json(json!({"error": "database not available"})))
+        (
+            StatusCode::SERVICE_UNAVAILABLE,
+            Json(json!({"error": "database not available"})),
+        )
     })?;
 
     let plan = match req.plan.as_deref().unwrap_or("free") {
@@ -77,7 +86,10 @@ pub async fn create_account(
 
     match db.create_account(&req.name, &req.email, plan) {
         Ok(account) => Ok(Json(AccountResponse::from(account))),
-        Err(e) => Err((StatusCode::INTERNAL_SERVER_ERROR, Json(json!({"error": e.to_string()}))))
+        Err(e) => Err((
+            StatusCode::INTERNAL_SERVER_ERROR,
+            Json(json!({"error": e.to_string()})),
+        )),
     }
 }
 
@@ -86,12 +98,21 @@ pub async fn get_account(
     Path(id): Path<String>,
 ) -> Result<Json<AccountResponse>, (StatusCode, Json<Value>)> {
     let db = state.db.as_ref().ok_or_else(|| {
-        (StatusCode::SERVICE_UNAVAILABLE, Json(json!({"error": "database not available"})))
+        (
+            StatusCode::SERVICE_UNAVAILABLE,
+            Json(json!({"error": "database not available"})),
+        )
     })?;
 
     match db.get_account(&id) {
         Ok(Some(account)) => Ok(Json(AccountResponse::from(account))),
-        Ok(None) => Err((StatusCode::NOT_FOUND, Json(json!({"error": "account not found"})))),
-        Err(e) => Err((StatusCode::INTERNAL_SERVER_ERROR, Json(json!({"error": e.to_string()}))))
+        Ok(None) => Err((
+            StatusCode::NOT_FOUND,
+            Json(json!({"error": "account not found"})),
+        )),
+        Err(e) => Err((
+            StatusCode::INTERNAL_SERVER_ERROR,
+            Json(json!({"error": e.to_string()})),
+        )),
     }
 }

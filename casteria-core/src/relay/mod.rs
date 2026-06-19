@@ -24,9 +24,7 @@ pub struct RelayManager {
 
 impl RelayManager {
     pub fn new() -> Self {
-        Self {
-            relays: Vec::new(),
-        }
+        Self { relays: Vec::new() }
     }
 
     pub fn add_relay(&mut self, def: &RelayDefinition) {

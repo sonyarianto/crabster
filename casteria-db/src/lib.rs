@@ -1,7 +1,7 @@
+pub mod auth;
 pub mod models;
 pub mod schema;
 pub mod tenant;
-pub mod auth;
 
 use std::sync::{Arc, Mutex};
 

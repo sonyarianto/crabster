@@ -7,7 +7,10 @@ async fn test_api_status() {
     tokio::time::timeout(Duration::from_secs(10), async {
         let server = common::TestServer::start().await;
         let json = server.api_get("/api/v1/status").await.unwrap();
-        assert!(json.contains("version"), "Status should have version: {json}");
+        assert!(
+            json.contains("version"),
+            "Status should have version: {json}"
+        );
         server.shutdown().await;
     })
     .await

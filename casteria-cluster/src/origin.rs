@@ -27,7 +27,11 @@ impl OriginNode {
 
     pub async fn start(self: Arc<Self>, config: &ClusterConfig, core: casteria_core::SharedState) {
         let port = config.origin_port;
-        let addr = format!("{}:{}", config.bind_address.as_deref().unwrap_or("0.0.0.0"), port);
+        let addr = format!(
+            "{}:{}",
+            config.bind_address.as_deref().unwrap_or("0.0.0.0"),
+            port
+        );
 
         let listener = match TcpListener::bind(&addr).await {
             Ok(l) => l,
@@ -97,7 +101,7 @@ impl OriginNode {
                                 }
                             }
                         }
-                            let mut edges = edges.write();
+                        let mut edges = edges.write();
                         if let Some(senders) = edges.get_mut(&mount_for_spawn) {
                             senders.retain(|s| s.receiver_count() > 0);
                         }
@@ -109,7 +113,11 @@ impl OriginNode {
         }
     }
 
-    async fn handle_edge(&self, mut stream: TcpStream, core: casteria_core::SharedState) -> anyhow::Result<()> {
+    async fn handle_edge(
+        &self,
+        mut stream: TcpStream,
+        core: casteria_core::SharedState,
+    ) -> anyhow::Result<()> {
         let (reader, mut writer) = stream.split();
         let mut buf_reader = BufReader::new(reader);
         let mut request_line = String::new();
@@ -117,7 +125,9 @@ impl OriginNode {
 
         let parts: Vec<&str> = request_line.split_whitespace().collect();
         if parts.len() < 2 || parts[0] != "GET" {
-            writer.write_all(b"HTTP/1.0 400 Bad Request\r\n\r\n").await?;
+            writer
+                .write_all(b"HTTP/1.0 400 Bad Request\r\n\r\n")
+                .await?;
             return Ok(());
         }
 
@@ -137,12 +147,18 @@ impl OriginNode {
         }
 
         if !is_relay {
-            writer.write_all(b"HTTP/1.0 400 Bad Request\r\n\r\nRelay connections require icy-relay: 1\r\n").await?;
+            writer
+                .write_all(
+                    b"HTTP/1.0 400 Bad Request\r\n\r\nRelay connections require icy-relay: 1\r\n",
+                )
+                .await?;
             return Ok(());
         }
 
         if !core.sources.mount_exists(mount) {
-            writer.write_all(b"HTTP/1.0 404 Not Found\r\n\r\nNo such mount\r\n").await?;
+            writer
+                .write_all(b"HTTP/1.0 404 Not Found\r\n\r\nNo such mount\r\n")
+                .await?;
             return Ok(());
         }
 

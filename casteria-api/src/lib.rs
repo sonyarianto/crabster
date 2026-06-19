@@ -1,5 +1,5 @@
-pub mod models;
 pub mod middleware;
+pub mod models;
 pub mod routes;
 
 use axum::routing::{get, post};
@@ -29,26 +29,41 @@ pub fn create_api_router(state: SharedApiState) -> Router {
         .route("/status", get(routes::get_status))
         .route("/mounts", get(routes::get_mounts))
         .route("/mounts/{mount}", get(routes::get_mount))
-        .route("/mounts/{mount}/listeners", get(routes::get_mount_listeners))
+        .route(
+            "/mounts/{mount}/listeners",
+            get(routes::get_mount_listeners),
+        )
         .route("/sources", get(routes::get_sources))
         .route("/stats", get(routes::get_stats))
         .route("/auth/login", post(routes::auth::login))
         .route("/auth/verify", get(routes::auth::verify));
 
     let analytics_routes = Router::new()
-        .route("/analytics/concurrent", get(routes::analytics::get_concurrent))
+        .route(
+            "/analytics/concurrent",
+            get(routes::analytics::get_concurrent),
+        )
         .route("/analytics/peak", get(routes::analytics::get_peak))
         .route("/analytics/devices", get(routes::analytics::get_devices))
-        .route("/analytics/referrers", get(routes::analytics::get_referrers));
+        .route(
+            "/analytics/referrers",
+            get(routes::analytics::get_referrers),
+        );
 
     let health_routes = Router::new()
         .route("/health", get(routes::health::get_health_status))
         .route("/health/alerts", get(routes::health::get_alerts))
-        .route("/health/alerts/{id}/acknowledge", post(routes::health::acknowledge_alert));
+        .route(
+            "/health/alerts/{id}/acknowledge",
+            post(routes::health::acknowledge_alert),
+        );
 
     let hls_routes = Router::new()
         .route("/hls/{mount}/playlist.m3u8", get(routes::hls::get_playlist))
-        .route("/hls/{mount}/segment/{segment}", get(routes::hls::get_segment))
+        .route(
+            "/hls/{mount}/segment/{segment}",
+            get(routes::hls::get_segment),
+        )
         .route("/hls/{mount}/start", get(routes::hls::ensure_hls));
 
     let admin_routes = Router::new()

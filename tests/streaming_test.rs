@@ -140,7 +140,10 @@ async fn test_mount_duplicate_rejected() {
         let mount = "/dup-test.mp3";
         let addr = server.stream_addr();
 
-        async fn connect_source(addr: &str, mount: &str) -> tokio::io::WriteHalf<tokio::net::TcpStream> {
+        async fn connect_source(
+            addr: &str,
+            mount: &str,
+        ) -> tokio::io::WriteHalf<tokio::net::TcpStream> {
             let s = tokio::net::TcpStream::connect(addr).await.unwrap();
             let (mut r, mut w) = tokio::io::split(s);
             let h = format!(

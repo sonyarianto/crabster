@@ -180,7 +180,10 @@ impl SourceManager {
     }
 
     pub fn all_sources(&self) -> Vec<Arc<Source>> {
-        self.sources.iter().map(|r| Arc::clone(&r.value())).collect()
+        self.sources
+            .iter()
+            .map(|r| Arc::clone(&r.value()))
+            .collect()
     }
 
     pub fn count(&self) -> usize {
