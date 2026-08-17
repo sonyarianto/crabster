@@ -162,7 +162,7 @@ The server serves status at:
 
 ### Implementation Tasks
 
-_Status legend: ✅ implemented · ⚠️ partial · ❌ not implemented (as of commit `4f183ae`)_
+_Status legend: ✅ implemented · ⚠️ partial · ❌ not implemented (as of commit `4f2e072` + htpasswd auth)_
 
 1. ✅ **TCP Listener** — Bind to configurable ports, accept connections
 2. ✅ **HTTP Parser** — Parse SOURCE, PUT, GET, HEAD, POST, OPTIONS methods (OPTIONS/DELETE etc. respond 501)
@@ -183,9 +183,9 @@ _Status legend: ✅ implemented · ⚠️ partial · ❌ not implemented (as of 
     - `updatemetadata`, `metadata` (for Shoutcast metadata updates)
     - Responses are placeholder XML; not yet wired to live state
 13. ✅ **Stats System** — XML/JSON stats reporting (real stats via REST API; legacy XML pages still placeholder)
-14. ⚠️ **Authentication Stack**:
+14. ✅ **Authentication Stack**:
     - ✅ Anonymous (allow all)
-    - ❌ Htpasswd (file-based) — stub, always defers
+    - ✅ Htpasswd (file-based) — reads Apache htpasswd files (`$apr1$`, bcrypt, `{SHA}`, crypt), reloads on file change; unknown user defers to next provider, wrong password rejects
     - ✅ URL-based (HTTP callback)
     - ✅ Static (config-defined credentials)
 15. ❌ **XSLT Transform** — XSLT rendering for status pages (`/status.xsl` serves plain HTML)
@@ -597,7 +597,7 @@ Phase 1 ─── Core Protocol Parity ─────────────�
     ├── ❌ Static file serving
     ├── ✅ Legacy admin interface (placeholder responses)
     ├── ✅ Stats XML/JSON reporting
-    ├── ⚠️ Authentication stack (anon/url/static ✅, htpasswd ❌)
+    ├── ✅ Authentication stack (anonymous, htpasswd, url, static)
     ├── ❌ XSLT rendering
     └── ✅ YP directory publishing
 

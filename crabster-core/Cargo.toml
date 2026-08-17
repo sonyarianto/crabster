@@ -35,6 +35,9 @@ toml = "0.8"
 # HTTP client (for URL auth)
 reqwest = { version = "0.12", default-features = false, features = ["rustls-tls"] }
 
+# Htpasswd file verification (apr1-MD5, bcrypt, SHA1, crypt)
+htpasswd-verify = "0.3"
+
 # Async trait
 async-trait = "0.1"
 
