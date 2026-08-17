@@ -66,15 +66,24 @@ impl ListenerManager {
         self.total_listeners.fetch_add(1, Ordering::Relaxed);
     }
 
-    pub fn remove_listener(&self, mount: &str, id: Uuid) {
-        if let Some(mut entry) = self.listeners.get_mut(mount) {
+    /// Removes a listener; returns `true` if it was actually removed.
+    pub fn remove_listener(&self, mount: &str, id: Uuid) -> bool {
+        let removed = if let Some(mut entry) = self.listeners.get_mut(mount) {
+            let before = entry.len();
             entry.retain(|l| l.info.read().id != id);
+            let removed = entry.len() < before;
             if entry.is_empty() {
                 drop(entry);
                 self.listeners.remove(mount);
             }
+            removed
+        } else {
+            false
+        };
+        if removed {
+            self.total_listeners.fetch_sub(1, Ordering::Relaxed);
         }
-        self.total_listeners.fetch_sub(1, Ordering::Relaxed);
+        removed
     }
 
     pub fn listener_count(&self, mount: &str) -> usize {
@@ -107,13 +116,16 @@ impl ListenerManager {
         self.listeners.contains_key(mount)
     }
 
+    /// Flags a listener as disconnected and removes it from the manager. The
+    /// listener's stream loop observes the flag and shuts down. Returns `true`
+    /// if the listener was found.
     pub fn kick_listener(&self, mount: &str, id: Uuid) -> bool {
-        if let Some(mut entry) = self.listeners.get_mut(mount) {
-            if let Some(pos) = entry.iter().position(|l| l.info.read().id == id) {
-                let listener = entry.remove(pos);
+        if let Some(entry) = self.listeners.get(mount) {
+            if let Some(listener) = entry.value().iter().find(|l| l.info.read().id == id) {
                 listener.disconnected.store(true, Ordering::Relaxed);
                 let _ = listener.sender.send(ListenerEvent::Disconnect);
-                self.total_listeners.fetch_sub(1, Ordering::Relaxed);
+                drop(entry);
+                self.remove_listener(mount, id);
                 return true;
             }
         }

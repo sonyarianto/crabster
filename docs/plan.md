@@ -162,7 +162,7 @@ The server serves status at:
 
 ### Implementation Tasks
 
-_Status legend: ✅ implemented · ⚠️ partial · ❌ not implemented (as of commit `7949e11` + static file serving)_
+_Status legend: ✅ implemented · ⚠️ partial · ❌ not implemented (as of commit `f315fc8` + listener management)_
 
 1. ✅ **TCP Listener** — Bind to configurable ports, accept connections
 2. ✅ **HTTP Parser** — Parse SOURCE, PUT, GET, HEAD, POST, OPTIONS methods (OPTIONS/DELETE etc. respond 501)
@@ -173,7 +173,7 @@ _Status legend: ✅ implemented · ⚠️ partial · ❌ not implemented (as of 
    - WebM/EBML (Matroska)
    - MP3/AAC (generic/legacy)
 6. ✅ **Ring Buffer** — Per-source circular buffer for burst-on-connect
-7. ❌ **Listener Management** — AVL tree of listeners per mount (`ListenerManager` module exists but is not wired into the GET path)
+7. ✅ **Listener Management** — Listeners registered per mount in `ListenerManager` (wired into the GET path: register on connect, bytes_sent tracking, kick support via API, re-registered on fallback mount switch)
 8. ✅ **ICY Metadata** — Parse and insert metadata at `icy-metaint` intervals (source-side parsing for Shoutcast + HTTP opt-in, listener-side insertion for opted-in GET clients)
 9. ✅ **Fallback Mount** — Move listeners to alternate mount on source drop (`fallback_mount`, `fallback_when_full`, `fallback_override` in mount config/DB; listener follows the fallback chain, waits for the fallback source to connect, and moves back with `fallback_override`)
 10. ✅ **Intro File** — Send intro file to new listeners before the live stream (`intro` in mount config; missing/unreadable file is logged and skipped)
@@ -591,7 +591,7 @@ Phase 1 ─── Core Protocol Parity ─────────────�
     ├── ✅ SOURCE/PUT method handling
     ├── ✅ Shoutcast/ICY compatibility
     ├── ✅ Format detection + plugin dispatch
-    ├── ⚠️ Ring buffer (✅) + listener management (❌)
+    ├── ✅ Ring buffer + listener management
     ├── ✅ ICY metadata (insertion + parsing)
     ├── ✅ Fallback mount + intro file
     ├── ✅ Static file serving

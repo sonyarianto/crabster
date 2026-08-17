@@ -109,6 +109,8 @@ http://localhost:8000/test.mp3
 | `GET /api/v1/health` | Server health |
 | `GET /api/v1/status` | Full status |
 | `GET /api/v1/mounts` | Active mount list |
+| `GET /api/v1/mounts/{mount}/listeners` | Listeners on a mount |
+| `DELETE /api/v1/mounts/{mount}/listeners/{id}` | Kick a listener |
 | `GET /api/v1/sources` | Source connection details |
 | `GET /api/v1/stats` | Global stats |
 

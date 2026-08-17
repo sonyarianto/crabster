@@ -83,6 +83,39 @@ impl TestServer {
         }
     }
 
+    /// Performs a DELETE to the REST API and returns the response body.
+    pub async fn api_delete(&self, path: &str) -> Result<String, String> {
+        use tokio::io::{AsyncReadExt, AsyncWriteExt};
+        let addr = format!("127.0.0.1:{}", self.api_port);
+        let mut stream = tokio::net::TcpStream::connect(&addr)
+            .await
+            .map_err(|e| format!("connect: {e}"))?;
+
+        let request =
+            format!("DELETE {path} HTTP/1.0\r\nHost: 127.0.0.1\r\nConnection: close\r\n\r\n");
+        stream
+            .write_all(request.as_bytes())
+            .await
+            .map_err(|e| format!("write: {e}"))?;
+
+        let mut response = Vec::new();
+        let mut buf = [0u8; 4096];
+        loop {
+            match stream.read(&mut buf).await {
+                Ok(0) => break,
+                Ok(n) => response.extend_from_slice(&buf[..n]),
+                Err(e) => return Err(format!("read: {e}")),
+            }
+        }
+        let response_str = String::from_utf8_lossy(&response).to_string();
+
+        if let Some(body_start) = response_str.find("\r\n\r\n") {
+            Ok(response_str[body_start + 4..].to_string())
+        } else {
+            Ok(response_str)
+        }
+    }
+
     /// Performs a raw HTTP GET to an arbitrary URL (useful for hitting the
     /// stream port or checking headers) and returns the full response text.
     pub async fn api_get_with_full_response(&self, url: &str) -> String {

@@ -2,7 +2,7 @@ pub mod middleware;
 pub mod models;
 pub mod routes;
 
-use axum::routing::{get, post};
+use axum::routing::{delete, get, post};
 use axum::Router;
 use crabster_core::SharedState;
 use std::sync::Arc;
@@ -32,6 +32,10 @@ pub fn create_api_router(state: SharedApiState) -> Router {
         .route(
             "/mounts/{mount}/listeners",
             get(routes::get_mount_listeners),
+        )
+        .route(
+            "/mounts/{mount}/listeners/{id}",
+            delete(routes::kick_listener),
         )
         .route("/sources", get(routes::get_sources))
         .route("/stats", get(routes::get_stats))

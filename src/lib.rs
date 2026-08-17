@@ -102,6 +102,7 @@ pub async fn run_with_config(
     let core_state: SharedState = Arc::new(AppState {
         config: RwLock::new(core_config.clone()),
         sources: crabster_core::source::SourceManager::new(),
+        listeners: crabster_core::listener::ListenerManager::new(),
         stats: crabster_core::stats::StatsCollector::new(),
         format_registry: crabster_core::format::FormatRegistry::new(),
     });
@@ -176,8 +177,9 @@ pub async fn run_with_config(
                 Ok((stream, peer_addr)) => {
                     let state = Arc::clone(&state_for_stream);
                     let db = db_for_stream.clone();
+                    let peer_ip = peer_addr.ip().to_string();
                     tokio::spawn(async move {
-                        if let Err(e) = handle_connection(stream, state, db).await {
+                        if let Err(e) = handle_connection(stream, peer_ip, state, db).await {
                             error!("Connection error from {}: {}", peer_addr, e);
                         }
                     });
@@ -233,6 +235,7 @@ pub async fn run_with_config(
 
 async fn handle_connection(
     stream: TcpStream,
+    peer_ip: String,
     state: SharedState,
     db: Option<crabster_db::Database>,
 ) -> Result<()> {
@@ -280,7 +283,7 @@ async fn handle_connection(
     match method.to_uppercase().as_str() {
         "SOURCE" => handle_source(path, &headers_map, buf_reader, writer, state, db).await,
         "PUT" => handle_source(path, &headers_map, buf_reader, writer, state, db).await,
-        "GET" | "HEAD" => handle_get(path, &headers_map, writer, state, db).await,
+        "GET" | "HEAD" => handle_get(path, &headers_map, writer, state, db, &peer_ip).await,
         "POST" => handle_post(path, &headers_map, buf_reader, writer, state).await,
         _ => {
             let _ = writer
@@ -1119,6 +1122,7 @@ async fn handle_get(
     mut writer: tokio::io::WriteHalf<tokio::net::TcpStream>,
     state: SharedState,
     db: Option<crabster_db::Database>,
+    peer_ip: &str,
 ) {
     let path = path.split('?').next().unwrap_or(path);
 
@@ -1274,23 +1278,58 @@ async fn handle_get(
 
     listener_joined(&state, &source);
 
+    // Register this listener with the ListenerManager so it can be queried
+    // and kicked via the API / admin interface.
+    let (event_tx, _event_rx) = tokio::sync::mpsc::unbounded_channel();
+    let listener = Arc::new(crabster_core::listener::Listener {
+        info: Arc::new(parking_lot::RwLock::new(
+            crabster_core::listener::ListenerInfo {
+                id: uuid::Uuid::new_v4(),
+                mount: serving_mount.clone(),
+                ip: peer_ip.to_string(),
+                user_agent: headers.get("user-agent").cloned().unwrap_or_default(),
+                protocol: crabster_core::listener::ListenerProtocol::Http,
+                connected_at: std::time::Instant::now(),
+                bytes_sent: 0,
+                referer: headers.get("referer").cloned(),
+                country: None,
+            },
+        )),
+        sender: event_tx,
+        disconnected: std::sync::atomic::AtomicBool::new(false),
+    });
+    let listener_id = listener.info.read().id;
+    state
+        .listeners
+        .add_listener(serving_mount.clone(), Arc::clone(&listener));
+
     let mut buf_clone = Arc::clone(&source.buffer);
     let mut pos = buf_clone.read().current_position();
     let mut meta_inserter = icy_metaint.map(IcyMetaInserter::new);
 
     loop {
+        // The listener was kicked via the API / admin interface.
+        if listener
+            .disconnected
+            .load(std::sync::atomic::Ordering::Relaxed)
+        {
+            break;
+        }
+
         // Drain any buffered audio first so bytes written just before the
         // source disconnects are not left behind.
         let current_pos = buf_clone.read().current_position();
         if current_pos > pos {
             let data = buf_clone.read().read(pos);
             pos = current_pos;
-            if !data.is_empty()
-                && write_with_icy_metadata(&mut meta_inserter, &data, &source, &mut writer)
+            if !data.is_empty() {
+                listener.info.write().bytes_sent += data.len() as u64;
+                if write_with_icy_metadata(&mut meta_inserter, &data, &source, &mut writer)
                     .await
                     .is_err()
-            {
-                break;
+                {
+                    break;
+                }
             }
         } else if !source.connected.load(std::sync::atomic::Ordering::Relaxed) {
             // The source is gone: try to move to the fallback mount (or back
@@ -1298,6 +1337,7 @@ async fn handle_get(
             // streaming. When no fallback is configured or it never connects,
             // the listener is dropped.
             let old_source = Arc::clone(&source);
+            let old_mount = serving_mount.clone();
             let moved = move_listener_to_fallback(
                 &state,
                 &db,
@@ -1310,6 +1350,11 @@ async fn handle_get(
                 break;
             }
             listener_left(&state, &old_source);
+            state.listeners.remove_listener(&old_mount, listener_id);
+            listener.info.write().mount = serving_mount.clone();
+            state
+                .listeners
+                .add_listener(serving_mount.clone(), Arc::clone(&listener));
             buf_clone = Arc::clone(&source.buffer);
             pos = buf_clone.read().current_position();
             meta_inserter = icy_metaint.map(IcyMetaInserter::new);
@@ -1324,8 +1369,14 @@ async fn handle_get(
             if override_enabled {
                 if let Some(primary) = state.sources.get(&requested_mount) {
                     listener_left(&state, &source);
+                    let old_mount = serving_mount.clone();
+                    state.listeners.remove_listener(&old_mount, listener_id);
                     source = primary;
                     serving_mount = requested_mount.clone();
+                    listener.info.write().mount = serving_mount.clone();
+                    state
+                        .listeners
+                        .add_listener(serving_mount.clone(), Arc::clone(&listener));
                     buf_clone = Arc::clone(&source.buffer);
                     pos = buf_clone.read().current_position();
                     meta_inserter = icy_metaint.map(IcyMetaInserter::new);
@@ -1338,6 +1389,7 @@ async fn handle_get(
         tokio::time::sleep(tokio::time::Duration::from_millis(50)).await;
     }
 
+    state.listeners.remove_listener(&serving_mount, listener_id);
     listener_left(&state, &source);
 }
 

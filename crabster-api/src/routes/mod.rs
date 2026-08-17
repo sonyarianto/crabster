@@ -85,10 +85,21 @@ pub async fn get_mounts(
     Ok(Json(responses))
 }
 
+/// Normalizes an API path mount (`mount` without a leading slash) to the
+/// internal form used by the source manager (with a leading slash).
+fn normalize_mount(mount: &str) -> String {
+    if mount.starts_with('/') {
+        mount.to_string()
+    } else {
+        format!("/{}", mount)
+    }
+}
+
 pub async fn get_mount(
     State(state): State<SharedApiState>,
     Path(mount): Path<String>,
 ) -> Result<Json<MountResponse>, (StatusCode, Json<Value>)> {
+    let mount = normalize_mount(&mount);
     let source = state.core.sources.get(&mount).ok_or_else(|| {
         (
             StatusCode::NOT_FOUND,
@@ -102,6 +113,7 @@ pub async fn get_mount_listeners(
     State(state): State<SharedApiState>,
     Path(mount): Path<String>,
 ) -> Result<Json<ListenerSummary>, (StatusCode, Json<Value>)> {
+    let mount = normalize_mount(&mount);
     let source = state.core.sources.get(&mount).ok_or_else(|| {
         (
             StatusCode::NOT_FOUND,
@@ -109,13 +121,61 @@ pub async fn get_mount_listeners(
         )
     })?;
 
-    let listener_count = source.info.stats.read().current_listeners;
+    let listeners = state.core.listeners.get_listeners(&mount);
+    let responses: Vec<ListenerResponse> = listeners
+        .iter()
+        .map(|l| {
+            let info = l.info.read();
+            ListenerResponse {
+                id: info.id,
+                ip: info.ip.clone(),
+                user_agent: info.user_agent.clone(),
+                connected_seconds: info.connected_at.elapsed().as_secs(),
+                bytes_received: info.bytes_sent,
+                country: info.country.clone(),
+                referer: info.referer.clone(),
+            }
+        })
+        .collect();
+    let total = state.core.listeners.listener_count(&mount);
+
+    // Fall back to the stats counter when the manager has no entry (e.g.
+    // listeners attached before this wiring, or relayed mounts).
+    let total = if total == 0 {
+        source.info.stats.read().current_listeners as usize
+    } else {
+        total
+    };
 
     Ok(Json(ListenerSummary {
         mount: mount.clone(),
-        listeners: Vec::new(),
-        total: listener_count as usize,
+        listeners: responses,
+        total,
     }))
+}
+
+/// Kicks (disconnects) a listener on a mount.
+pub async fn kick_listener(
+    State(state): State<SharedApiState>,
+    Path((mount, id)): Path<(String, uuid::Uuid)>,
+) -> Result<Json<Value>, (StatusCode, Json<Value>)> {
+    let mount = normalize_mount(&mount);
+    let source = state.core.sources.get(&mount).ok_or_else(|| {
+        (
+            StatusCode::NOT_FOUND,
+            Json(json!({"error": "mount not found"})),
+        )
+    })?;
+
+    if state.core.listeners.kick_listener(&mount, id) {
+        Ok(Json(json!({"ok": true})))
+    } else {
+        let _ = source;
+        Err((
+            StatusCode::NOT_FOUND,
+            Json(json!({"error": "listener not found"})),
+        ))
+    }
 }
 
 pub async fn get_stats(

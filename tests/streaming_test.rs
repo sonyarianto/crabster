@@ -1063,6 +1063,91 @@ async fn test_static_file_serving_from_webroot() {
     .unwrap();
 }
 
+#[tokio::test]
+async fn test_listener_registered_and_kicked() {
+    tokio::time::timeout(Duration::from_secs(30), async {
+        let server = common::TestServer::start().await;
+        let addr = server.stream_addr();
+        let mount = "/kick-test.mp3";
+
+        let mut source_w = connect_source(&addr, mount).await;
+
+        // Connect a listener with a distinct user agent.
+        let listener = tokio::net::TcpStream::connect(&addr).await.unwrap();
+        let (mut listener_r, mut listener_w) = tokio::io::split(listener);
+        let get_request = format!(
+            "GET {} HTTP/1.0\r\nUser-Agent: kick-test-client/1.0\r\n\r\n",
+            mount
+        );
+        listener_w.write_all(get_request.as_bytes()).await.unwrap();
+        drop(listener_w);
+        let _ = read_until_header_end(&mut listener_r).await;
+
+        // Source streams so the listener stays active.
+        source_w
+            .write_all(&generate_test_audio(8192))
+            .await
+            .unwrap();
+
+        // The listener must appear in the API.
+        let listeners_json = server
+            .api_get("/api/v1/mounts/kick-test.mp3/listeners")
+            .await
+            .unwrap();
+        assert!(
+            listeners_json.contains("kick-test-client/1.0"),
+            "listener should be registered, got: {}",
+            listeners_json
+        );
+
+        // Extract the listener id and kick it.
+        let listeners: serde_json::Value =
+            serde_json::from_str(&listeners_json).expect("valid json");
+        let id = listeners["listeners"][0]["id"]
+            .as_str()
+            .expect("listener id")
+            .to_string();
+        let kick_url = format!("/api/v1/mounts/kick-test.mp3/listeners/{}", id);
+        let kick_resp = server.api_delete(&kick_url).await.unwrap();
+        assert!(kick_resp.contains("ok"), "kick response: {}", kick_resp);
+
+        // The listener connection must be closed shortly after the kick.
+        let mut buf = [0u8; 1024];
+        let start = std::time::Instant::now();
+        let mut closed = false;
+        while start.elapsed() < Duration::from_secs(5) {
+            match listener_r.read(&mut buf).await {
+                Ok(0) => {
+                    closed = true;
+                    break;
+                }
+                Ok(_) => continue,
+                Err(_) => {
+                    closed = true;
+                    break;
+                }
+            }
+        }
+        assert!(closed, "kicked listener should be disconnected");
+
+        // The listener count should drop back to zero.
+        let listeners_json = server
+            .api_get("/api/v1/mounts/kick-test.mp3/listeners")
+            .await
+            .unwrap();
+        assert!(
+            !listeners_json.contains("kick-test-client/1.0"),
+            "listener should be removed after kick, got: {}",
+            listeners_json
+        );
+
+        drop(source_w);
+        server.shutdown().await;
+    })
+    .await
+    .unwrap();
+}
+
 async fn read_audio(r: &mut tokio::io::ReadHalf<tokio::net::TcpStream>, target: usize) -> Vec<u8> {
     let mut data = Vec::new();
     let mut buf = [0u8; 4096];
