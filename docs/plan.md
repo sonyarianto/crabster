@@ -162,31 +162,34 @@ The server serves status at:
 
 ### Implementation Tasks
 
-1. **TCP Listener** — Bind to configurable ports, accept connections
-2. **HTTP Parser** — Parse SOURCE, PUT, GET, HEAD, POST, OPTIONS methods
-3. **Source Authentication** — Basic auth for source connections
-4. **Shoutcast/ICY Compatibility** — Password-line auth, OK2 response
-5. **Format Detection** — Content-Type header → format plugin dispatch
+_Status legend: ✅ implemented · ⚠️ partial · ❌ not implemented (as of commit `4f183ae`)_
+
+1. ✅ **TCP Listener** — Bind to configurable ports, accept connections
+2. ✅ **HTTP Parser** — Parse SOURCE, PUT, GET, HEAD, POST, OPTIONS methods (OPTIONS/DELETE etc. respond 501)
+3. ✅ **Source Authentication** — Basic auth for source connections (+ DB mount passwords, quota check)
+4. ✅ **Shoutcast/ICY Compatibility** — Password-line auth, OK2 response
+5. ✅ **Format Detection** — Content-Type header → format plugin dispatch
    - Ogg (Vorbis, Opus, Theora, FLAC)
    - WebM/EBML (Matroska)
    - MP3/AAC (generic/legacy)
-6. **Ring Buffer** — Per-source circular buffer for burst-on-connect
-7. **Listener Management** — AVL tree of listeners per mount
-8. **ICY Metadata** — Parse and insert metadata at `icy-metaint` intervals
-9. **Fallback Mount** — Move listeners to alternate mount on source drop
-10. **Intro File** — Prepend intro file before stream data
-11. **Static File Serving** — Serve webroot, adminroot files
-12. **Admin Interface (Legacy)** — `/admin/` XML commands:
+6. ✅ **Ring Buffer** — Per-source circular buffer for burst-on-connect
+7. ❌ **Listener Management** — AVL tree of listeners per mount (`ListenerManager` module exists but is not wired into the GET path)
+8. ✅ **ICY Metadata** — Parse and insert metadata at `icy-metaint` intervals (source-side parsing for Shoutcast + HTTP opt-in, listener-side insertion for opted-in GET clients)
+9. ❌ **Fallback Mount** — Move listeners to alternate mount on source drop (config/DB fields only)
+10. ❌ **Intro File** — Prepend intro file before stream data (config field only)
+11. ❌ **Static File Serving** — Serve webroot, adminroot files
+12. ✅ **Admin Interface (Legacy)** — `/admin/` XML commands:
     - `mountlist`, `listclients`, `kickclient`, `moveclients`
     - `updatemetadata`, `metadata` (for Shoutcast metadata updates)
-13. **Stats System** — XML/JSON stats reporting
-14. **Authentication Stack**:
-    - Anonymous (allow all)
-    - Htpasswd (file-based)
-    - URL-based (HTTP callback)
-    - Static (config-defined credentials)
-15. **XSLT Transform** — XSLT rendering for status pages
-16. **YP Directory** — Publish to `dir.xiph.org`
+    - Responses are placeholder XML; not yet wired to live state
+13. ✅ **Stats System** — XML/JSON stats reporting (real stats via REST API; legacy XML pages still placeholder)
+14. ⚠️ **Authentication Stack**:
+    - ✅ Anonymous (allow all)
+    - ❌ Htpasswd (file-based) — stub, always defers
+    - ✅ URL-based (HTTP callback)
+    - ✅ Static (config-defined credentials)
+15. ❌ **XSLT Transform** — XSLT rendering for status pages (`/status.xsl` serves plain HTML)
+16. ❌ **YP Directory** — Publish to `dir.xiph.org`
 
 ### Config Migration
 
@@ -584,19 +587,19 @@ Key files in reference implementation for protocol parity:
 
 ```
 Phase 1 ─── Core Protocol Parity ───────────────────────────── Epoch 1
-    ├── TCP listener + HTTP parser
-    ├── SOURCE/PUT method handling
-    ├── Shoutcast/ICY compatibility
-    ├── Format detection + plugin dispatch
-    ├── Ring buffer + listener management
-    ├── ICY metadata (insertion + parsing)
-    ├── Fallback mount + intro file
-    ├── Static file serving
-    ├── Legacy admin interface
-    ├── Stats XML/JSON reporting
-    ├── Authentication stack (anon, htpasswd, URL, static)
-    ├── XSLT rendering
-    └── YP directory publishing
+    ├── ✅ TCP listener + HTTP parser
+    ├── ✅ SOURCE/PUT method handling
+    ├── ✅ Shoutcast/ICY compatibility
+    ├── ✅ Format detection + plugin dispatch
+    ├── ⚠️ Ring buffer (✅) + listener management (❌)
+    ├── ✅ ICY metadata (insertion + parsing)
+    ├── ❌ Fallback mount + intro file
+    ├── ❌ Static file serving
+    ├── ✅ Legacy admin interface (placeholder responses)
+    ├── ✅ Stats XML/JSON reporting
+    ├── ⚠️ Authentication stack (anon/url/static ✅, htpasswd ❌)
+    ├── ❌ XSLT rendering
+    └── ❌ YP directory publishing
 
 Phase 2 ─── Modern Management ──────────────────────────────── Epoch 2
     ├── REST API (axum)
