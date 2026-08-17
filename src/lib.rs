@@ -26,6 +26,9 @@ pub struct ServerConfig {
     pub shoutcast_mount: Option<String>,
     pub yp_url: Option<String>,
     pub hostname: String,
+    /// Per-mount settings (fallback mount, max listeners, public, etc.).
+    #[serde(default)]
+    pub mounts: Vec<crabster_core::config::MountConfig>,
 }
 
 impl Default for ServerConfig {
@@ -42,6 +45,7 @@ impl Default for ServerConfig {
             shoutcast_mount: None,
             yp_url: None,
             hostname: "localhost".into(),
+            mounts: Vec::new(),
         }
     }
 }
@@ -81,6 +85,7 @@ pub async fn run_with_config(
         listen.shoutcast_compat = config.shoutcast_compat;
         listen.shoutcast_mount = config.shoutcast_mount.clone();
     }
+    core_config.mounts = config.mounts.clone();
 
     let core_state: SharedState = Arc::new(AppState {
         config: RwLock::new(core_config.clone()),
@@ -263,7 +268,7 @@ async fn handle_connection(
     match method.to_uppercase().as_str() {
         "SOURCE" => handle_source(path, &headers_map, buf_reader, writer, state, db).await,
         "PUT" => handle_source(path, &headers_map, buf_reader, writer, state, db).await,
-        "GET" | "HEAD" => handle_get(path, &headers_map, writer, state).await,
+        "GET" | "HEAD" => handle_get(path, &headers_map, writer, state, db).await,
         "POST" => handle_post(path, &headers_map, buf_reader, writer, state).await,
         _ => {
             let _ = writer
@@ -366,6 +371,7 @@ async fn handle_source(
 
     let format_type = crabster_core::format::FormatType::from_content_type(&content_type);
     let mount_stats = state.stats.ensure_mount(mount);
+    let settings = resolve_mount_settings(&state, &db, mount).await;
 
     let info = Arc::new(SourceInfo {
         id: uuid::Uuid::new_v4(),
@@ -379,12 +385,18 @@ async fn handle_source(
         quality: None,
         channels: None,
         sample_rate: None,
-        max_listeners: None,
-        public: true,
-        hidden: false,
-        fallback_mount: None,
-        fallback_override: false,
-        fallback_when_full: false,
+        max_listeners: settings.as_ref().and_then(|s| s.max_listeners),
+        public: settings.as_ref().map(|s| s.public).unwrap_or(true),
+        hidden: settings.as_ref().map(|s| s.hidden).unwrap_or(false),
+        fallback_mount: settings.as_ref().and_then(|s| s.fallback_mount.clone()),
+        fallback_override: settings
+            .as_ref()
+            .map(|s| s.fallback_override)
+            .unwrap_or(false),
+        fallback_when_full: settings
+            .as_ref()
+            .map(|s| s.fallback_when_full)
+            .unwrap_or(false),
         burst_size: 65536,
         metadata: Arc::new(parking_lot::RwLock::new(StreamMetadata::default())),
         stats: mount_stats,
@@ -843,6 +855,7 @@ async fn handle_shoutcast_source(
         .unwrap_or(crabster_core::format::FormatType::Mp3);
 
     let mount_stats = state.stats.ensure_mount(&mount);
+    let settings = resolve_mount_settings(&state, &db, &mount).await;
     let info = Arc::new(SourceInfo {
         id: uuid::Uuid::new_v4(),
         mount: mount.clone(),
@@ -855,12 +868,18 @@ async fn handle_shoutcast_source(
         quality: None,
         channels: None,
         sample_rate: None,
-        max_listeners: None,
-        public,
-        hidden: false,
-        fallback_mount: None,
-        fallback_override: false,
-        fallback_when_full: false,
+        max_listeners: settings.as_ref().and_then(|s| s.max_listeners),
+        public: settings.as_ref().map(|s| s.public).unwrap_or(public),
+        hidden: settings.as_ref().map(|s| s.hidden).unwrap_or(false),
+        fallback_mount: settings.as_ref().and_then(|s| s.fallback_mount.clone()),
+        fallback_override: settings
+            .as_ref()
+            .map(|s| s.fallback_override)
+            .unwrap_or(false),
+        fallback_when_full: settings
+            .as_ref()
+            .map(|s| s.fallback_when_full)
+            .unwrap_or(false),
         burst_size: 65536,
         metadata: Arc::new(parking_lot::RwLock::new(StreamMetadata {
             icy_name,
@@ -901,11 +920,187 @@ async fn handle_shoutcast_source(
     .await;
 }
 
+/// Max number of fallback hops to follow (mirrors Icecast's MAX_FALLBACK_DEPTH).
+const MAX_FALLBACK_DEPTH: usize = 10;
+
+/// Seconds a listener waits for a fallback source to connect before being
+/// dropped (mirrors Icecast's 15s relay/failover hold).
+const FALLBACK_WAIT_SECONDS: u64 = 15;
+
+/// Mount settings relevant to fallback handling, merged from the DB mount
+/// config when present, otherwise from the file config mounts list.
+#[derive(Debug, Clone, Default)]
+struct MountFallbackSettings {
+    fallback_mount: Option<String>,
+    fallback_when_full: bool,
+    fallback_override: bool,
+    max_listeners: Option<usize>,
+    public: bool,
+    hidden: bool,
+}
+
+async fn resolve_mount_settings(
+    state: &SharedState,
+    db: &Option<crabster_db::Database>,
+    mount: &str,
+) -> Option<MountFallbackSettings> {
+    if let Some(db) = db {
+        if let Ok(Some(cfg)) = db.get_mount_config(mount) {
+            return Some(MountFallbackSettings {
+                fallback_mount: cfg.fallback_mount,
+                fallback_when_full: cfg.fallback_when_full,
+                fallback_override: cfg.fallback_override,
+                max_listeners: cfg.max_listeners.map(|v| v as usize),
+                public: cfg.public,
+                hidden: cfg.hidden,
+            });
+        }
+    }
+
+    let config = state.config.read().await;
+    for m in &config.mounts {
+        if m.mount_name == mount {
+            return Some(MountFallbackSettings {
+                fallback_mount: m.fallback_mount.clone(),
+                fallback_when_full: m.fallback_when_full.unwrap_or(false),
+                fallback_override: m.fallback_override.unwrap_or(false),
+                max_listeners: m.max_listeners.map(|v| v as usize),
+                public: m.public.unwrap_or(true),
+                hidden: m.hidden.unwrap_or(false),
+            });
+        }
+    }
+    None
+}
+
+/// Resolves the source to serve for a mount request, following the fallback
+/// chain when the requested mount has no active source (or is full with
+/// `fallback_when_full`). Returns the source and the mount actually served.
+async fn resolve_source_with_fallback(
+    state: &SharedState,
+    db: &Option<crabster_db::Database>,
+    requested_mount: &str,
+) -> Option<(Arc<Source>, String)> {
+    let mut mount = requested_mount.to_string();
+    for _ in 0..MAX_FALLBACK_DEPTH {
+        if let Some(source) = state.sources.get(&mount) {
+            let settings = resolve_mount_settings(state, db, &mount).await;
+            let full = settings
+                .as_ref()
+                .and_then(|s| s.max_listeners)
+                .map(|max| source.info.stats.read().current_listeners as usize >= max)
+                .unwrap_or(false);
+            if !(full
+                && settings
+                    .as_ref()
+                    .map(|s| s.fallback_when_full)
+                    .unwrap_or(false))
+            {
+                return Some((source, mount));
+            }
+            // Mount is full and fallback_when_full: fall through to fallback.
+        }
+        let settings = resolve_mount_settings(state, db, &mount).await;
+        match settings.and_then(|s| s.fallback_mount) {
+            Some(fb) if !fb.is_empty() && fb != mount => mount = fb,
+            _ => return None,
+        }
+    }
+    None
+}
+
+/// Attempts to move a listener to a better source: back to the requested
+/// mount when it has reconnected with `fallback_override`, otherwise to the
+/// fallback of the currently served mount. Waits up to `FALLBACK_WAIT_SECONDS`
+/// for a fallback source to connect. Returns true if the source changed.
+async fn move_listener_to_fallback(
+    state: &SharedState,
+    db: &Option<crabster_db::Database>,
+    requested_mount: &str,
+    source: &mut Arc<Source>,
+    serving_mount: &mut String,
+) -> bool {
+    // Serving a fallback: move back to the requested mount when it has
+    // reconnected and fallback_override is enabled.
+    if *serving_mount != requested_mount {
+        let settings = resolve_mount_settings(state, db, requested_mount).await;
+        if settings.map(|s| s.fallback_override).unwrap_or(false) {
+            if let Some(primary) = state.sources.get(requested_mount) {
+                *source = primary;
+                *serving_mount = requested_mount.to_string();
+                return true;
+            }
+        }
+    }
+
+    // Follow the fallback chain from the currently served mount.
+    let mut target = source.info.fallback_mount.clone();
+    if target.is_none() {
+        let settings = resolve_mount_settings(state, db, serving_mount).await;
+        target = settings.and_then(|s| s.fallback_mount);
+    }
+    let Some(target) = target else { return false };
+    if target.is_empty() || target == *serving_mount {
+        return false;
+    }
+
+    // Wait for the fallback source to connect (listeners are held, like
+    // Icecast holds clients during a failover).
+    let deadline =
+        std::time::Instant::now() + tokio::time::Duration::from_secs(FALLBACK_WAIT_SECONDS);
+    loop {
+        if let Some(fb_source) = state.sources.get(&target) {
+            *source = fb_source;
+            *serving_mount = target;
+            return true;
+        }
+        if std::time::Instant::now() >= deadline {
+            return false;
+        }
+        tokio::time::sleep(tokio::time::Duration::from_millis(100)).await;
+    }
+}
+
+fn listener_joined(state: &SharedState, source: &Arc<Source>) {
+    let mut stats = source.info.stats.write();
+    stats.current_listeners += 1;
+    stats.total_listener_connections += 1;
+    stats.last_listener_connect = Some(chrono::Utc::now());
+    if stats.current_listeners > stats.peak_listeners {
+        stats.peak_listeners = stats.current_listeners;
+        stats.peak_listeners_at = Some(chrono::Utc::now());
+    }
+    drop(stats);
+
+    let global = state.stats.global();
+    let cur = global
+        .current_listeners
+        .fetch_add(1, std::sync::atomic::Ordering::Relaxed)
+        + 1;
+    let _ = global
+        .peak_listeners
+        .fetch_max(cur, std::sync::atomic::Ordering::Relaxed);
+}
+
+fn listener_left(state: &SharedState, source: &Arc<Source>) {
+    let mut stats = source.info.stats.write();
+    stats.current_listeners = stats.current_listeners.saturating_sub(1);
+    stats.last_listener_disconnect = Some(chrono::Utc::now());
+    drop(stats);
+
+    state
+        .stats
+        .global()
+        .current_listeners
+        .fetch_sub(1, std::sync::atomic::Ordering::Relaxed);
+}
+
 async fn handle_get(
     path: &str,
     headers: &std::collections::HashMap<String, String>,
     mut writer: tokio::io::WriteHalf<tokio::net::TcpStream>,
     state: SharedState,
+    db: Option<crabster_db::Database>,
 ) {
     let path = path.split('?').next().unwrap_or(path);
 
@@ -954,9 +1149,15 @@ async fn handle_get(
         return;
     }
 
-    let mount = path;
-    let source = match state.sources.get(mount) {
-        Some(s) => s,
+    let requested_mount = path.to_string();
+    let (mut source, mut serving_mount) = match resolve_source_with_fallback(
+        &state,
+        &db,
+        &requested_mount,
+    )
+    .await
+    {
+        Some((s, m)) => (s, m),
         None => {
             let _ = writer
                 .write_all(b"HTTP/1.0 404 Not Found\r\nContent-Type: text/plain\r\n\r\nNo such mountpoint\r\n")
@@ -1017,7 +1218,9 @@ async fn handle_get(
         return;
     }
 
-    let buf_clone = Arc::clone(&source.buffer);
+    listener_joined(&state, &source);
+
+    let mut buf_clone = Arc::clone(&source.buffer);
     let mut pos = buf_clone.read().current_position();
     let mut meta_inserter = icy_metaint.map(IcyMetaInserter::new);
 
@@ -1036,12 +1239,52 @@ async fn handle_get(
                 break;
             }
         } else if !source.connected.load(std::sync::atomic::Ordering::Relaxed) {
-            // No more data and the source is gone.
-            break;
+            // The source is gone: try to move to the fallback mount (or back
+            // to the requested mount with fallback_override), then keep
+            // streaming. When no fallback is configured or it never connects,
+            // the listener is dropped.
+            let old_source = Arc::clone(&source);
+            let moved = move_listener_to_fallback(
+                &state,
+                &db,
+                &requested_mount,
+                &mut source,
+                &mut serving_mount,
+            )
+            .await;
+            if !moved {
+                break;
+            }
+            listener_left(&state, &old_source);
+            buf_clone = Arc::clone(&source.buffer);
+            pos = buf_clone.read().current_position();
+            meta_inserter = icy_metaint.map(IcyMetaInserter::new);
+            listener_joined(&state, &source);
+            continue;
+        } else if *serving_mount != requested_mount {
+            // The listener is being served by a fallback: move back to the
+            // requested mount when its source reconnects and fallback_override
+            // is enabled.
+            let settings = resolve_mount_settings(&state, &db, &requested_mount).await;
+            let override_enabled = settings.map(|s| s.fallback_override).unwrap_or(false);
+            if override_enabled {
+                if let Some(primary) = state.sources.get(&requested_mount) {
+                    listener_left(&state, &source);
+                    source = primary;
+                    serving_mount = requested_mount.clone();
+                    buf_clone = Arc::clone(&source.buffer);
+                    pos = buf_clone.read().current_position();
+                    meta_inserter = icy_metaint.map(IcyMetaInserter::new);
+                    listener_joined(&state, &source);
+                    continue;
+                }
+            }
         }
 
         tokio::time::sleep(tokio::time::Duration::from_millis(50)).await;
     }
+
+    listener_left(&state, &source);
 }
 
 async fn handle_post(

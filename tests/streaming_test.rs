@@ -595,6 +595,339 @@ async fn test_get_listener_icy_metadata_insertion() {
     .unwrap();
 }
 
+async fn connect_source(addr: &str, mount: &str) -> tokio::io::WriteHalf<tokio::net::TcpStream> {
+    let s = tokio::net::TcpStream::connect(addr).await.unwrap();
+    let (mut r, mut w) = tokio::io::split(s);
+    let h = format!(
+        "SOURCE {} HTTP/1.0\r\n\
+         Authorization: Basic c291cmNlOmhhY2ttZQ==\r\n\
+         Content-Type: audio/mpeg\r\n\r\n",
+        mount
+    );
+    w.write_all(h.as_bytes()).await.unwrap();
+    let mut resp = [0u8; 1024];
+    r.read(&mut resp).await.unwrap();
+    w
+}
+
+#[tokio::test]
+async fn test_fallback_mount_switches_listener_on_source_disconnect() {
+    tokio::time::timeout(Duration::from_secs(30), async {
+        let stream_port = portpicker::pick_unused_port().expect("no free port");
+        let api_port = portpicker::pick_unused_port().expect("no free port");
+        let db_path = std::env::temp_dir().join(format!("crabster-fallback-{}.db", stream_port));
+        let server = common::TestServer::start_with(ServerConfig {
+            stream_port,
+            api_port,
+            cluster_enabled: false,
+            db_path: Some(db_path.to_string_lossy().to_string()),
+            jwt_secret: "test-secret".into(),
+            mounts: vec![crabster_core::config::MountConfig {
+                mount_name: "/main".into(),
+                fallback_mount: Some("/backup".into()),
+                ..Default::default()
+            }],
+            ..Default::default()
+        })
+        .await;
+
+        let addr = server.stream_addr();
+        let mut main_w = connect_source(&addr, "/main").await;
+        let mut backup_w = connect_source(&addr, "/backup").await;
+
+        let listener = tokio::net::TcpStream::connect(&addr).await.unwrap();
+        let (mut listener_r, mut listener_w) = tokio::io::split(listener);
+        listener_w
+            .write_all(b"GET /main HTTP/1.0\r\n\r\n")
+            .await
+            .unwrap();
+        drop(listener_w);
+        let header = read_until_header_end(&mut listener_r).await;
+        assert!(
+            String::from_utf8_lossy(&header).contains("200 OK"),
+            "Listener should get 200 for /main"
+        );
+
+        // Stream distinguishable audio from /main, then disconnect it.
+        main_w.write_all(&generate_test_audio(4096)).await.unwrap();
+        tokio::time::sleep(Duration::from_millis(100)).await;
+        drop(main_w); // source disconnects
+
+        // The listener should be moved to /backup and receive its audio.
+        tokio::time::sleep(Duration::from_millis(300)).await;
+        backup_w
+            .write_all(&generate_test_audio(8192))
+            .await
+            .unwrap();
+
+        let mut stream_data = Vec::new();
+        let mut read_buf = [0u8; 4096];
+        let start = std::time::Instant::now();
+        while start.elapsed() < Duration::from_secs(5) && stream_data.len() < 8192 {
+            match listener_r.read(&mut read_buf).await {
+                Ok(0) => break,
+                Ok(n) => stream_data.extend_from_slice(&read_buf[..n]),
+                Err(_) => break,
+            }
+        }
+
+        assert!(
+            stream_data.len() >= 4096,
+            "Listener should receive backup audio after fallback, got {} bytes",
+            stream_data.len()
+        );
+
+        drop(backup_w);
+        server.shutdown().await;
+    })
+    .await
+    .unwrap();
+}
+
+#[tokio::test]
+async fn test_fallback_mount_serves_when_primary_is_down() {
+    tokio::time::timeout(Duration::from_secs(30), async {
+        let stream_port = portpicker::pick_unused_port().expect("no free port");
+        let api_port = portpicker::pick_unused_port().expect("no free port");
+        let db_path =
+            std::env::temp_dir().join(format!("crabster-fallback-down-{}.db", stream_port));
+        let server = common::TestServer::start_with(ServerConfig {
+            stream_port,
+            api_port,
+            cluster_enabled: false,
+            db_path: Some(db_path.to_string_lossy().to_string()),
+            jwt_secret: "test-secret".into(),
+            mounts: vec![crabster_core::config::MountConfig {
+                mount_name: "/main".into(),
+                fallback_mount: Some("/backup".into()),
+                ..Default::default()
+            }],
+            ..Default::default()
+        })
+        .await;
+
+        let addr = server.stream_addr();
+        // Only the backup source is up; /main is down.
+        let mut backup_w = connect_source(&addr, "/backup").await;
+
+        let listener = tokio::net::TcpStream::connect(&addr).await.unwrap();
+        let (mut listener_r, mut listener_w) = tokio::io::split(listener);
+        listener_w
+            .write_all(b"GET /main HTTP/1.0\r\n\r\n")
+            .await
+            .unwrap();
+        drop(listener_w);
+        let header = read_until_header_end(&mut listener_r).await;
+        assert!(
+            String::from_utf8_lossy(&header).contains("200 OK"),
+            "GET /main with primary down should fall back to /backup"
+        );
+
+        backup_w
+            .write_all(&generate_test_audio(4096))
+            .await
+            .unwrap();
+        let mut stream_data = Vec::new();
+        let mut read_buf = [0u8; 4096];
+        let start = std::time::Instant::now();
+        while start.elapsed() < Duration::from_secs(5) && stream_data.len() < 4096 {
+            match listener_r.read(&mut read_buf).await {
+                Ok(0) => break,
+                Ok(n) => stream_data.extend_from_slice(&read_buf[..n]),
+                Err(_) => break,
+            }
+        }
+        assert!(
+            stream_data.len() >= 1024,
+            "Listener should receive audio from the fallback source, got {} bytes",
+            stream_data.len()
+        );
+
+        drop(backup_w);
+        server.shutdown().await;
+    })
+    .await
+    .unwrap();
+}
+
+#[tokio::test]
+async fn test_fallback_override_moves_listener_back() {
+    tokio::time::timeout(Duration::from_secs(30), async {
+        let stream_port = portpicker::pick_unused_port().expect("no free port");
+        let api_port = portpicker::pick_unused_port().expect("no free port");
+        let db_path =
+            std::env::temp_dir().join(format!("crabster-fallback-ovr-{}.db", stream_port));
+        let server = common::TestServer::start_with(ServerConfig {
+            stream_port,
+            api_port,
+            cluster_enabled: false,
+            db_path: Some(db_path.to_string_lossy().to_string()),
+            jwt_secret: "test-secret".into(),
+            mounts: vec![crabster_core::config::MountConfig {
+                mount_name: "/main".into(),
+                fallback_mount: Some("/backup".into()),
+                fallback_override: Some(true),
+                ..Default::default()
+            }],
+            ..Default::default()
+        })
+        .await;
+
+        let addr = server.stream_addr();
+        let mut main_w = connect_source(&addr, "/main").await;
+        let mut backup_w = connect_source(&addr, "/backup").await;
+
+        // Listener connects to /main.
+        let listener = tokio::net::TcpStream::connect(&addr).await.unwrap();
+        let (mut listener_r, mut listener_w) = tokio::io::split(listener);
+        listener_w
+            .write_all(b"GET /main HTTP/1.0\r\n\r\n")
+            .await
+            .unwrap();
+        drop(listener_w);
+        let header = read_until_header_end(&mut listener_r).await;
+        assert!(String::from_utf8_lossy(&header).contains("200 OK"));
+
+        // /main disconnects -> listener moves to /backup and receives its data.
+        drop(main_w);
+        tokio::time::sleep(Duration::from_millis(300)).await;
+        backup_w
+            .write_all(&generate_test_audio(4096))
+            .await
+            .unwrap();
+
+        let mut stream_data = Vec::new();
+        let mut read_buf = [0u8; 4096];
+        let start = std::time::Instant::now();
+        while start.elapsed() < Duration::from_secs(5) && stream_data.len() < 4096 {
+            match listener_r.read(&mut read_buf).await {
+                Ok(0) => break,
+                Ok(n) => stream_data.extend_from_slice(&read_buf[..n]),
+                Err(_) => break,
+            }
+        }
+        assert!(
+            stream_data.len() >= 1024,
+            "Listener should receive backup audio after /main disconnect, got {} bytes",
+            stream_data.len()
+        );
+
+        // /main reconnects with fallback_override -> listener moves back and
+        // receives the new /main data.
+        let mut main_w = connect_source(&addr, "/main").await;
+        tokio::time::sleep(Duration::from_millis(300)).await;
+        main_w.write_all(&generate_test_audio(8192)).await.unwrap();
+
+        let mut stream_data = Vec::new();
+        let mut read_buf = [0u8; 4096];
+        let start = std::time::Instant::now();
+        while start.elapsed() < Duration::from_secs(5) && stream_data.len() < 8192 {
+            match listener_r.read(&mut read_buf).await {
+                Ok(0) => break,
+                Ok(n) => stream_data.extend_from_slice(&read_buf[..n]),
+                Err(_) => break,
+            }
+        }
+        assert!(
+            stream_data.len() >= 4096,
+            "Listener should move back to /main and receive new data, got {} bytes",
+            stream_data.len()
+        );
+
+        drop(main_w);
+        drop(backup_w);
+        server.shutdown().await;
+    })
+    .await
+    .unwrap();
+}
+
+#[tokio::test]
+async fn test_fallback_when_full_serves_fallback() {
+    tokio::time::timeout(Duration::from_secs(30), async {
+        let stream_port = portpicker::pick_unused_port().expect("no free port");
+        let api_port = portpicker::pick_unused_port().expect("no free port");
+        let db_path =
+            std::env::temp_dir().join(format!("crabster-fallback-full-{}.db", stream_port));
+        let server = common::TestServer::start_with(ServerConfig {
+            stream_port,
+            api_port,
+            cluster_enabled: false,
+            db_path: Some(db_path.to_string_lossy().to_string()),
+            jwt_secret: "test-secret".into(),
+            mounts: vec![crabster_core::config::MountConfig {
+                mount_name: "/main".into(),
+                max_listeners: Some(1),
+                fallback_mount: Some("/backup".into()),
+                fallback_when_full: Some(true),
+                ..Default::default()
+            }],
+            ..Default::default()
+        })
+        .await;
+
+        let addr = server.stream_addr();
+        let mut main_w = connect_source(&addr, "/main").await;
+        let mut backup_w = connect_source(&addr, "/backup").await;
+
+        // First listener fits on /main (max_listeners = 1).
+        let l1 = tokio::net::TcpStream::connect(&addr).await.unwrap();
+        let (mut l1_r, mut l1_w) = tokio::io::split(l1);
+        l1_w.write_all(b"GET /main HTTP/1.0\r\n\r\n").await.unwrap();
+        drop(l1_w);
+        let h1 = read_until_header_end(&mut l1_r).await;
+        assert!(String::from_utf8_lossy(&h1).contains("200 OK"));
+
+        // Second listener exceeds the limit -> served from /backup.
+        let l2 = tokio::net::TcpStream::connect(&addr).await.unwrap();
+        let (mut l2_r, mut l2_w) = tokio::io::split(l2);
+        l2_w.write_all(b"GET /main HTTP/1.0\r\n\r\n").await.unwrap();
+        drop(l2_w);
+        let h2 = read_until_header_end(&mut l2_r).await;
+        assert!(String::from_utf8_lossy(&h2).contains("200 OK"));
+
+        // Both listeners should receive audio.
+        main_w.write_all(&generate_test_audio(4096)).await.unwrap();
+        backup_w
+            .write_all(&generate_test_audio(4096))
+            .await
+            .unwrap();
+
+        let d1 = read_audio(&mut l1_r, 4096).await;
+        let d2 = read_audio(&mut l2_r, 4096).await;
+        assert!(
+            d1.len() >= 1024,
+            "Listener 1 should receive audio from /main, got {} bytes",
+            d1.len()
+        );
+        assert!(
+            d2.len() >= 1024,
+            "Listener 2 should receive audio from /backup, got {} bytes",
+            d2.len()
+        );
+
+        drop(main_w);
+        drop(backup_w);
+        server.shutdown().await;
+    })
+    .await
+    .unwrap();
+}
+
+async fn read_audio(r: &mut tokio::io::ReadHalf<tokio::net::TcpStream>, target: usize) -> Vec<u8> {
+    let mut data = Vec::new();
+    let mut buf = [0u8; 4096];
+    let start = std::time::Instant::now();
+    while start.elapsed() < Duration::from_secs(5) && data.len() < target {
+        match r.read(&mut buf).await {
+            Ok(0) => break,
+            Ok(n) => data.extend_from_slice(&buf[..n]),
+            Err(_) => break,
+        }
+    }
+    data
+}
+
 fn generate_test_audio(size: usize) -> Vec<u8> {
     (0..size).map(|i| (i % 256) as u8).collect()
 }

@@ -38,6 +38,27 @@ shoutcast_mount = "/live"
 
 The source connects to the stream port and sends only the password, then ICY headers. If `shoutcast_mount` is unset, the password is matched against configured mounts, falling back to the global `source_password` on mount `/`.
 
+## Fallback Mounts
+
+When a source disconnects, its listeners can be moved to another mount so the stream never goes silent. Configure per-mount in `crabster.toml`:
+
+```toml
+[[mounts]]
+mount_name = "/live"
+fallback_mount = "/backup"          # where listeners go when /live drops
+fallback_when_full = true            # serve fallback when max_listeners is reached
+fallback_override = true             # move listeners back when /live reconnects
+max_listeners = 100                  # limit used by fallback_when_full
+```
+
+Behavior (mirrors Icecast):
+- A listener on `/live` is moved to `/backup` when the `/live` source disconnects, and waits (up to 15s) for the fallback source to connect.
+- If `/live` is down at connect time, `GET /live` is served from the fallback chain automatically.
+- With `fallback_when_full`, listeners beyond `max_listeners` are served the fallback instead of being rejected.
+- With `fallback_override`, listeners are moved back to `/live` when its source reconnects.
+
+The fallback chain can be deeper than one hop (up to 10 mounts, like Icecast).
+
 ## YP Directory Publishing
 
 Public mounts can be listed in a Yellow Pages directory (e.g. [dir.xiph.org](http://dir.xiph.org)) so listeners can discover them. Enable it in `crabster.toml`:

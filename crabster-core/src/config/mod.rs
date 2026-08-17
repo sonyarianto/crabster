@@ -135,7 +135,7 @@ pub struct Paths {
     pub basedir: Option<String>,
 }
 
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, Default, Serialize, Deserialize)]
 pub struct MountConfig {
     pub mount_name: String,
     pub max_listeners: Option<i64>,
