@@ -1,4 +1,6 @@
-# Casteria — Streaming Server
+# Crabster — Streaming Server
+
+Repository: [github.com/sonyarianto/crabster](https://github.com/sonyarianto/crabster)
 
 ## Vision
 
@@ -12,7 +14,7 @@ Existing encoders (liquidsoap, BUTT, Mixxx, RadioBOSS, SAM Broadcaster) connect 
 
 ```
 ┌─────────────┐     ┌──────────────────────────────────────────────────┐
-│  Encoders   │────▶│              Casteria Server                     │
+│  Encoders   │────▶│              Crabster Server                     │
 │ (SOURCE/PUT)│     │                                                  │
 └─────────────┘     │  ┌──────────┐  ┌──────────┐  ┌───────────────┐  │
                     │  │ HTTP     │  │ ICY      │  │ Admin/API     │  │
@@ -54,9 +56,9 @@ Existing encoders (liquidsoap, BUTT, Mixxx, RadioBOSS, SAM Broadcaster) connect 
 ### Directory Layout
 
 ```
-casteria/
+crabster/
 ├── Cargo.toml
-├── casteria-core/          # Protocol handling, source management, streaming
+├── crabster-core/          # Protocol handling, source management, streaming
 │   ├── src/
 │   │   ├── source/         # Source connection handling (SOURCE, PUT, ICY)
 │   │   ├── listener/       # Listener connection handling (HTTP, ICY)
@@ -66,17 +68,17 @@ casteria/
 │   │   ├── stats/          # Statistics collection
 │   │   └── admin/          # Legacy admin XML commands
 │   └── Cargo.toml
-├── casteria-api/           # REST API
+├── crabster-api/           # REST API
 │   ├── src/
 │   │   ├── routes/         # API route handlers
 │   │   ├── models/         # API data models
 │   │   └── middleware/     # Auth, rate limiting, CORS
 │   └── Cargo.toml
-├── casteria-dashboard/     # Web dashboard (React frontend)
-├── casteria-analytics/     # Analytics pipeline
-├── casteria-hls/           # HLS packager
-├── casteria-health/        # Stream health monitoring
-├── casteria-cluster/       # Clustering / origin-edge
+├── crabster-dashboard/     # Web dashboard (React frontend)
+├── crabster-analytics/     # Analytics pipeline
+├── crabster-hls/           # HLS packager
+├── crabster-health/        # Stream health monitoring
+├── crabster-cluster/       # Clustering / origin-edge
 └── docs/
     └── plan.md
 ```
@@ -191,8 +193,8 @@ The server serves status at:
 Accept XML config directly or convert to native config:
 
 ```ron
-// casteria.ron — native format
-CasteriaConfig(
+// crabster.ron — native format
+CrabsterConfig(
     hostname: "localhost",
     listen_sockets: [
         ListenSocket(
@@ -511,7 +513,7 @@ struct Alert {
 ### Architecture
 
 ```
-Source ──▶ Casteria ──▶ HLS Packager ──▶ HLS Segments ──▶ Listeners
+Source ──▶ Crabster ──▶ HLS Packager ──▶ HLS Segments ──▶ Listeners
                  │                       │
                   └── Streaming ──────────┘
 ```
@@ -551,7 +553,7 @@ GET /hls/{mount}/init.m4s            → fMP4 init segment
 
 Key files in reference implementation for protocol parity:
 
-| File | Function | Casteria Equivalent |
+| File | Function | Crabster Equivalent |
 |------|----------|---------------------|
 | `connection.c` | Accept loop, request parsing, shoutcast compat | `core::listener::tcp` + `core::http::parser` |
 | `source.c` | Source thread, client tree, burst handling | `core::source::manager` |
@@ -641,17 +643,17 @@ Phase 7 ─── HLS Support ────────────────�
 
 ```bash
 # Initialize project
-cargo new casteria
-cd casteria
+cargo new crabster
+cd crabster
 
 # Add workspace members
-mkdir -p casteria-core/src
-mkdir -p casteria-api/src
-mkdir -p casteria-hls/src
-mkdir -p casteria-analytics/src
-mkdir -p casteria-health/src
-mkdir -p casteria-cluster/src
-mkdir -p casteria-dashboard
+mkdir -p crabster-core/src
+mkdir -p crabster-api/src
+mkdir -p crabster-hls/src
+mkdir -p crabster-analytics/src
+mkdir -p crabster-health/src
+mkdir -p crabster-cluster/src
+mkdir -p crabster-dashboard
 ```
 
 ### First Milestone

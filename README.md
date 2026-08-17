@@ -1,4 +1,6 @@
-# Casteria
+# Crabster
+
+**Repository:** [github.com/sonyarianto/crabster](https://github.com/sonyarianto/crabster)
 
 A streaming media server written in Rust — protocol-compatible with existing encoders and listeners.
 
@@ -41,19 +43,19 @@ http://localhost:8000/test.mp3
 
 ## Configuration
 
-Create `casteria.toml`:
+Create `crabster.toml`:
 
 ```toml
 stream_port = 8000
 api_port = 8001
 jwt_secret = "change-me"
-db_path = "casteria.db"
+db_path = "crabster.db"
 ```
 
 Or use CLI flags:
 
 ```bash
-cargo run -- --stream-port 8080 --api-port 8081 --db-path /data/casteria.db
+cargo run -- --stream-port 8080 --api-port 8081 --db-path /data/crabster.db
 ```
 
 ## Docker
@@ -74,13 +76,13 @@ See [docs/docker.md](docs/docker.md).
 ## Project
 
 ```
-casteria-core/        Core protocol, source manager, ring buffer
-casteria-api/         REST API server
-casteria-db/          SQLite multi-tenant database
-casteria-hls/         HLS live packager
-casteria-analytics/   Client analytics collector
-casteria-health/      Stream health monitoring + alerts
-casteria-cluster/     Origin/Edge clustering
+crabster-core/        Core protocol, source manager, ring buffer
+crabster-api/         REST API server
+crabster-db/          SQLite multi-tenant database
+crabster-hls/         HLS live packager
+crabster-analytics/   Client analytics collector
+crabster-health/      Stream health monitoring + alerts
+crabster-cluster/     Origin/Edge clustering
 ```
 
 ## Tests

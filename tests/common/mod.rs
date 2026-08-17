@@ -1,6 +1,6 @@
 use std::time::Duration;
 
-use casteria::{run_with_config, ServerConfig};
+use crabster::{run_with_config, ServerConfig};
 
 pub struct TestServer {
     pub stream_port: u16,
@@ -14,7 +14,7 @@ impl TestServer {
         let stream_port = portpicker::pick_unused_port().expect("no free port");
         let api_port = portpicker::pick_unused_port().expect("no free port");
 
-        let db_path = std::env::temp_dir().join(format!("casteria-test-{}.db", stream_port));
+        let db_path = std::env::temp_dir().join(format!("crabster-test-{}.db", stream_port));
         let db_path_str = db_path.to_string_lossy().to_string();
 
         let config = ServerConfig {

@@ -1,13 +1,13 @@
 [workspace]
 resolver = "2"
 members = [
-    "casteria-core",
-    "casteria-api",
-    "casteria-hls",
-    "casteria-analytics",
-    "casteria-health",
-    "casteria-cluster",
-"casteria-db",
+    "crabster-core",
+    "crabster-api",
+    "crabster-hls",
+    "crabster-analytics",
+    "crabster-health",
+    "crabster-cluster",
+"crabster-db",
 ]
 
 [workspace.package]
@@ -38,18 +38,18 @@ rustls-pemfile = "2"
 axum-extra = "0.10"
 
 [package]
-name = "casteria"
+name = "crabster"
 version = "0.1.0"
 edition = "2021"
 
 [dependencies]
-casteria-core = { path = "casteria-core" }
-casteria-api = { path = "casteria-api" }
-casteria-db = { path = "casteria-db" }
-casteria-hls = { path = "casteria-hls" }
-casteria-analytics = { path = "casteria-analytics" }
-casteria-health = { path = "casteria-health" }
-casteria-cluster = { path = "casteria-cluster" }
+crabster-core = { path = "crabster-core" }
+crabster-api = { path = "crabster-api" }
+crabster-db = { path = "crabster-db" }
+crabster-hls = { path = "crabster-hls" }
+crabster-analytics = { path = "crabster-analytics" }
+crabster-health = { path = "crabster-health" }
+crabster-cluster = { path = "crabster-cluster" }
 tokio = { workspace = true }
 tracing = { workspace = true }
 tracing-subscriber = { workspace = true }

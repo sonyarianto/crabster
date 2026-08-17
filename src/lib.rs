@@ -2,10 +2,10 @@ use std::sync::Arc;
 
 use anyhow::Result;
 use base64::Engine;
-use casteria_cluster::{ClusterConfig, ClusterMode};
-use casteria_core::config::Config;
-use casteria_core::source::{RingBuffer, Source, SourceInfo, StreamMetadata};
-use casteria_core::{AppState, SharedState};
+use crabster_cluster::{ClusterConfig, ClusterMode};
+use crabster_core::config::Config;
+use crabster_core::source::{RingBuffer, Source, SourceInfo, StreamMetadata};
+use crabster_core::{AppState, SharedState};
 use serde::{Deserialize, Serialize};
 use tokio::io::{AsyncBufReadExt, AsyncReadExt, AsyncWriteExt, BufReader};
 use tokio::net::{TcpListener, TcpStream};
@@ -32,8 +32,8 @@ impl Default for ServerConfig {
             cluster_port: 8002,
             cluster_enabled: true,
             cluster_mode: ClusterMode::Origin,
-            db_path: Some("casteria.db".into()),
-            jwt_secret: "casteria-jwt-secret-change-me-please".into(),
+            db_path: Some("crabster.db".into()),
+            jwt_secret: "crabster-jwt-secret-change-me-please".into(),
         }
     }
 }
@@ -51,11 +51,11 @@ pub async fn run_with_config(
     config: ServerConfig,
     shutdown_rx: tokio::sync::oneshot::Receiver<()>,
 ) -> Result<()> {
-    let db_path = config.db_path.as_deref().unwrap_or("casteria.db");
+    let db_path = config.db_path.as_deref().unwrap_or("crabster.db");
 
-    let db = match casteria_db::Database::open(db_path) {
+    let db = match crabster_db::Database::open(db_path) {
         Ok(db) => {
-            casteria_db::auth::register_default_admin(&db)?;
+            crabster_db::auth::register_default_admin(&db)?;
             info!("Database ready at {}", db_path);
             Some(db)
         }
@@ -72,28 +72,28 @@ pub async fn run_with_config(
 
     let core_state: SharedState = Arc::new(AppState {
         config: RwLock::new(core_config.clone()),
-        sources: casteria_core::source::SourceManager::new(),
-        stats: casteria_core::stats::StatsCollector::new(),
-        format_registry: casteria_core::format::FormatRegistry::new(),
+        sources: crabster_core::source::SourceManager::new(),
+        stats: crabster_core::stats::StatsCollector::new(),
+        format_registry: crabster_core::format::FormatRegistry::new(),
     });
 
-    let analytics = Arc::new(casteria_analytics::AnalyticsCollector::new());
-    let _analytics_handle = casteria_analytics::collector::start_collector(
+    let analytics = Arc::new(crabster_analytics::AnalyticsCollector::new());
+    let _analytics_handle = crabster_analytics::collector::start_collector(
         Arc::clone(&analytics),
         Arc::clone(&core_state),
     );
 
-    let health_checker = Arc::new(casteria_health::checker::HealthChecker::new(Arc::new(
-        casteria_health::alerts::AlertEngine::new(1000),
+    let health_checker = Arc::new(crabster_health::checker::HealthChecker::new(Arc::new(
+        crabster_health::alerts::AlertEngine::new(1000),
     )));
     let _health_handle = health_checker.clone().start(Arc::clone(&core_state));
 
-    let hls_manager = Arc::new(casteria_hls::HlsManager::new(
-        casteria_hls::HlsConfig::default(),
+    let hls_manager = Arc::new(crabster_hls::HlsManager::new(
+        crabster_hls::HlsConfig::default(),
     ));
     let _hls_handle = hls_manager.clone().start(Arc::clone(&core_state));
 
-    let api_state: casteria_api::SharedApiState = Arc::new(casteria_api::ApiState {
+    let api_state: crabster_api::SharedApiState = Arc::new(crabster_api::ApiState {
         core: Arc::clone(&core_state),
         db: db.clone(),
         jwt_secret: config.jwt_secret,
@@ -102,7 +102,7 @@ pub async fn run_with_config(
         hls: Some(hls_manager),
     });
 
-    info!("Casteria v{} starting...", env!("CARGO_PKG_VERSION"));
+    info!("Crabster v{} starting...", env!("CARGO_PKG_VERSION"));
 
     let mut handles = Vec::new();
 
@@ -110,7 +110,7 @@ pub async fn run_with_config(
     let api_state_clone = Arc::clone(&api_state);
     let api_addr = format!("0.0.0.0:{}", config.api_port);
     let api_handle = tokio::spawn(async move {
-        let app = casteria_api::create_api_router(api_state_clone);
+        let app = crabster_api::create_api_router(api_state_clone);
         info!("REST API listening on {}", api_addr);
         let listener = TcpListener::bind(&api_addr).await.unwrap();
         if let Err(e) = axum::serve(listener, app).await {
@@ -149,7 +149,7 @@ pub async fn run_with_config(
     if config.cluster_enabled {
         match config.cluster_mode {
             ClusterMode::Origin => {
-                let origin = Arc::new(casteria_cluster::origin::OriginNode::new());
+                let origin = Arc::new(crabster_cluster::origin::OriginNode::new());
                 let origin_core = Arc::clone(&core_state);
                 let origin_config = ClusterConfig {
                     origin_port: config.cluster_port,
@@ -162,7 +162,7 @@ pub async fn run_with_config(
                 info!("Cluster mode: Origin (relay port {})", config.cluster_port);
             }
             ClusterMode::Edge => {
-                let edge = casteria_cluster::edge::EdgeNode::new();
+                let edge = crabster_cluster::edge::EdgeNode::new();
                 let edge_core = Arc::clone(&core_state);
                 let edge_config = ClusterConfig {
                     origin_port: config.cluster_port,
@@ -180,7 +180,7 @@ pub async fn run_with_config(
         }
     }
 
-    info!("Casteria ready.");
+    info!("Crabster ready.");
     shutdown_rx.await.ok();
     info!("Shutting down...");
     Ok(())
@@ -189,7 +189,7 @@ pub async fn run_with_config(
 async fn handle_connection(
     stream: TcpStream,
     state: SharedState,
-    db: Option<casteria_db::Database>,
+    db: Option<crabster_db::Database>,
 ) -> Result<()> {
     let (reader, mut writer) = tokio::io::split(stream);
     let mut buf_reader = BufReader::new(reader);
@@ -265,7 +265,7 @@ async fn handle_source(
     mut reader: BufReader<tokio::io::ReadHalf<tokio::net::TcpStream>>,
     mut writer: tokio::io::WriteHalf<tokio::net::TcpStream>,
     state: SharedState,
-    db: Option<casteria_db::Database>,
+    db: Option<crabster_db::Database>,
 ) {
     let mount = mount.split('?').next().unwrap_or(mount);
 
@@ -280,7 +280,7 @@ async fn handle_source(
         Some(creds) => creds,
         None => {
             let _ = writer
-                .write_all(b"HTTP/1.0 401 Unauthorized\r\nWWW-Authenticate: Basic realm=\"casteria\"\r\nContent-Length: 0\r\n\r\n")
+                .write_all(b"HTTP/1.0 401 Unauthorized\r\nWWW-Authenticate: Basic realm=\"crabster\"\r\nContent-Length: 0\r\n\r\n")
                 .await;
             return;
         }
@@ -318,7 +318,7 @@ async fn handle_source(
 
     if !valid {
         let _ = writer
-            .write_all(b"HTTP/1.0 401 Unauthorized\r\nWWW-Authenticate: Basic realm=\"casteria\"\r\nContent-Length: 0\r\n\r\n")
+            .write_all(b"HTTP/1.0 401 Unauthorized\r\nWWW-Authenticate: Basic realm=\"crabster\"\r\nContent-Length: 0\r\n\r\n")
             .await;
         return;
     }
@@ -330,7 +330,7 @@ async fn handle_source(
 
     let user_agent = headers.get("user-agent").cloned().unwrap_or_default();
 
-    let format_type = casteria_core::format::FormatType::from_content_type(&content_type);
+    let format_type = crabster_core::format::FormatType::from_content_type(&content_type);
     let mount_stats = state.stats.ensure_mount(mount);
 
     let info = Arc::new(SourceInfo {
@@ -419,10 +419,10 @@ async fn handle_get(
     if path == "/" || path == "/status.xsl" || path == "/status-json.xsl" {
         let xml = r#"<?xml version="1.0"?>
 <icestats>
-  <admin>casteria</admin>
+  <admin>crabster</admin>
   <host>localhost</host>
   <location>Earth</location>
-  <server_id>Casteria/0.1.0</server_id>
+  <server_id>Crabster/0.1.0</server_id>
   <server_start>0</server_start>
   <source_total>0</source_total>
   <sources>0</sources>
@@ -433,7 +433,7 @@ async fn handle_get(
             xml.to_string()
         } else {
             format!(
-                "<html><body><h1>Casteria</h1><pre>{}</pre></body></html>",
+                "<html><body><h1>Crabster</h1><pre>{}</pre></body></html>",
                 xml
             )
         };
@@ -480,7 +480,7 @@ async fn handle_get(
             meta.icy_br.unwrap_or(128),
             meta.icy_name
                 .clone()
-                .unwrap_or_else(|| "Casteria Stream".into()),
+                .unwrap_or_else(|| "Crabster Stream".into()),
             meta.icy_genre.clone().unwrap_or_else(|| "Various".into()),
             meta.icy_url.clone().unwrap_or_default(),
             if source.info.public { "1" } else { "0" },
@@ -561,14 +561,14 @@ async fn handle_legacy_admin(
     let path = path.trim_start_matches("/admin/");
     let path = path.split('?').next().unwrap_or(path);
 
-    let cmd = casteria_core::admin::AdminCommand::from_path(path);
+    let cmd = crabster_core::admin::AdminCommand::from_path(path);
     let response = match cmd {
-        Some(command) => casteria_core::admin::handle_admin_command(
+        Some(command) => crabster_core::admin::handle_admin_command(
             &command,
             &std::collections::HashMap::new(),
             &state,
         ),
-        None => casteria_core::admin::AdminResponse::xml(
+        None => crabster_core::admin::AdminResponse::xml(
             404,
             "<icestats><error>unknown command</error></icestats>".into(),
         ),

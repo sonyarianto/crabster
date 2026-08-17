@@ -1,14 +1,14 @@
 services:
-  casteria:
+  crabster:
     build: .
     ports:
       - "8000:8000"
       - "8001:8001"
     volumes:
-      - casteria_data:/data
+      - crabster_data:/data
     environment:
-      - RUST_LOG=casteria=info
+      - RUST_LOG=crabster=info
     restart: unless-stopped
 
 volumes:
-  casteria_data:
+  crabster_data:

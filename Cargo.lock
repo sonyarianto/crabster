@@ -232,162 +232,6 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "8ae3f5d315924270530207e2a68396c3cc547f6dca3fbdca317cfb1a51edb593"
 
 [[package]]
-name = "casteria"
-version = "0.1.0"
-dependencies = [
- "anyhow",
- "axum",
- "base64",
- "casteria-analytics",
- "casteria-api",
- "casteria-cluster",
- "casteria-core",
- "casteria-db",
- "casteria-health",
- "casteria-hls",
- "clap",
- "parking_lot",
- "portpicker",
- "serde",
- "serde_json",
- "tokio",
- "toml",
- "tower-http",
- "tracing",
- "tracing-subscriber",
- "ureq",
- "uuid",
-]
-
-[[package]]
-name = "casteria-analytics"
-version = "0.1.0"
-dependencies = [
- "anyhow",
- "casteria-core",
- "chrono",
- "dashmap",
- "parking_lot",
- "serde",
- "serde_json",
- "tokio",
- "tracing",
-]
-
-[[package]]
-name = "casteria-api"
-version = "0.1.0"
-dependencies = [
- "anyhow",
- "axum",
- "bytes",
- "casteria-analytics",
- "casteria-core",
- "casteria-db",
- "casteria-health",
- "casteria-hls",
- "chrono",
- "parking_lot",
- "serde",
- "serde_json",
- "thiserror",
- "tokio",
- "tower",
- "tower-http",
- "tracing",
- "uuid",
-]
-
-[[package]]
-name = "casteria-cluster"
-version = "0.1.0"
-dependencies = [
- "anyhow",
- "casteria-core",
- "parking_lot",
- "serde",
- "serde_json",
- "tokio",
- "tracing",
- "uuid",
-]
-
-[[package]]
-name = "casteria-core"
-version = "0.1.0"
-dependencies = [
- "anyhow",
- "arc-swap",
- "async-trait",
- "base64",
- "bytes",
- "chrono",
- "dashmap",
- "httparse",
- "hyper",
- "parking_lot",
- "reqwest",
- "serde",
- "serde_json",
- "thiserror",
- "tokio",
- "tokio-util",
- "toml",
- "tower",
- "tracing",
- "uuid",
-]
-
-[[package]]
-name = "casteria-db"
-version = "0.1.0"
-dependencies = [
- "anyhow",
- "bcrypt",
- "chrono",
- "jsonwebtoken",
- "parking_lot",
- "rusqlite",
- "serde",
- "serde_json",
- "thiserror",
- "tokio",
- "tracing",
- "uuid",
-]
-
-[[package]]
-name = "casteria-health"
-version = "0.1.0"
-dependencies = [
- "anyhow",
- "casteria-core",
- "chrono",
- "parking_lot",
- "serde",
- "serde_json",
- "tokio",
- "tracing",
- "uuid",
-]
-
-[[package]]
-name = "casteria-hls"
-version = "0.1.0"
-dependencies = [
- "anyhow",
- "bytes",
- "casteria-core",
- "chrono",
- "parking_lot",
- "serde",
- "serde_json",
- "tokio",
- "tracing",
- "uuid",
-]
-
-[[package]]
 name = "cc"
 version = "1.2.64"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -484,6 +328,162 @@ name = "core-foundation-sys"
 version = "0.8.7"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "773648b94d0e5d620f64f280777445740e61fe701025087ec8b57f45c791888b"
+
+[[package]]
+name = "crabster"
+version = "0.1.0"
+dependencies = [
+ "anyhow",
+ "axum",
+ "base64",
+ "clap",
+ "crabster-analytics",
+ "crabster-api",
+ "crabster-cluster",
+ "crabster-core",
+ "crabster-db",
+ "crabster-health",
+ "crabster-hls",
+ "parking_lot",
+ "portpicker",
+ "serde",
+ "serde_json",
+ "tokio",
+ "toml",
+ "tower-http",
+ "tracing",
+ "tracing-subscriber",
+ "ureq",
+ "uuid",
+]
+
+[[package]]
+name = "crabster-analytics"
+version = "0.1.0"
+dependencies = [
+ "anyhow",
+ "chrono",
+ "crabster-core",
+ "dashmap",
+ "parking_lot",
+ "serde",
+ "serde_json",
+ "tokio",
+ "tracing",
+]
+
+[[package]]
+name = "crabster-api"
+version = "0.1.0"
+dependencies = [
+ "anyhow",
+ "axum",
+ "bytes",
+ "chrono",
+ "crabster-analytics",
+ "crabster-core",
+ "crabster-db",
+ "crabster-health",
+ "crabster-hls",
+ "parking_lot",
+ "serde",
+ "serde_json",
+ "thiserror",
+ "tokio",
+ "tower",
+ "tower-http",
+ "tracing",
+ "uuid",
+]
+
+[[package]]
+name = "crabster-cluster"
+version = "0.1.0"
+dependencies = [
+ "anyhow",
+ "crabster-core",
+ "parking_lot",
+ "serde",
+ "serde_json",
+ "tokio",
+ "tracing",
+ "uuid",
+]
+
+[[package]]
+name = "crabster-core"
+version = "0.1.0"
+dependencies = [
+ "anyhow",
+ "arc-swap",
+ "async-trait",
+ "base64",
+ "bytes",
+ "chrono",
+ "dashmap",
+ "httparse",
+ "hyper",
+ "parking_lot",
+ "reqwest",
+ "serde",
+ "serde_json",
+ "thiserror",
+ "tokio",
+ "tokio-util",
+ "toml",
+ "tower",
+ "tracing",
+ "uuid",
+]
+
+[[package]]
+name = "crabster-db"
+version = "0.1.0"
+dependencies = [
+ "anyhow",
+ "bcrypt",
+ "chrono",
+ "jsonwebtoken",
+ "parking_lot",
+ "rusqlite",
+ "serde",
+ "serde_json",
+ "thiserror",
+ "tokio",
+ "tracing",
+ "uuid",
+]
+
+[[package]]
+name = "crabster-health"
+version = "0.1.0"
+dependencies = [
+ "anyhow",
+ "chrono",
+ "crabster-core",
+ "parking_lot",
+ "serde",
+ "serde_json",
+ "tokio",
+ "tracing",
+ "uuid",
+]
+
+[[package]]
+name = "crabster-hls"
+version = "0.1.0"
+dependencies = [
+ "anyhow",
+ "bytes",
+ "chrono",
+ "crabster-core",
+ "parking_lot",
+ "serde",
+ "serde_json",
+ "tokio",
+ "tracing",
+ "uuid",
+]
 
 [[package]]
 name = "crc32fast"
