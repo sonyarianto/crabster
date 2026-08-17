@@ -940,6 +940,37 @@ async fn handle_shoutcast_source(
 /// Max number of fallback hops to follow (mirrors Icecast's MAX_FALLBACK_DEPTH).
 const MAX_FALLBACK_DEPTH: usize = 10;
 
+/// Built-in XSLT 1.0 stylesheet for `/status.xsl` (Icecast-style status page).
+const DEFAULT_STATUS_XSL: &str = r##"<xsl:stylesheet xmlns:xsl="http://www.w3.org/1999/XSL/Transform" version="1.0">
+<xsl:template match="/">
+<html>
+<head><title>Crabster Status</title></head>
+<body>
+<h1>Crabster <xsl:value-of select="server_id"/></h1>
+<p>Host: <xsl:value-of select="host"/></p>
+<p>Sources: <xsl:value-of select="sources"/> &middot; Listeners: <xsl:value-of select="listeners"/></p>
+<xsl:choose>
+<xsl:when test="source">
+<xsl:for-each select="source">
+<section>
+<h2>Mount <code><xsl:value-of select="@mount"/></code></h2>
+<xsl:if test="server_name"><p><strong><xsl:value-of select="server_name"/></strong></p></xsl:if>
+<xsl:if test="title"><p>Now playing: <xsl:value-of select="title"/></p></xsl:if>
+<xsl:if test="genre"><p>Genre: <xsl:value-of select="genre"/></p></xsl:if>
+<p>Listeners: <xsl:value-of select="listeners"/> (peak <xsl:value-of select="listener_peak"/>) &middot; Bitrate: <xsl:value-of select="bitrate"/></p>
+</section>
+</xsl:for-each>
+</xsl:when>
+<xsl:otherwise>
+<p>No active mountpoints.</p>
+</xsl:otherwise>
+</xsl:choose>
+</body>
+</html>
+</xsl:template>
+</xsl:stylesheet>
+"##;
+
 /// Seconds a listener waits for a fallback source to connect before being
 /// dropped (mirrors Icecast's 15s relay/failover hold).
 const FALLBACK_WAIT_SECONDS: u64 = 15;
@@ -1127,25 +1158,22 @@ async fn handle_get(
     let path = path.split('?').next().unwrap_or(path);
 
     if path == "/" || path == "/status.xsl" || path == "/status-json.xsl" {
-        let xml = r#"<?xml version="1.0"?>
-<icestats>
-  <admin>crabster</admin>
-  <host>localhost</host>
-  <location>Earth</location>
-  <server_id>Crabster/0.1.0</server_id>
-  <server_start>0</server_start>
-  <source_total>0</source_total>
-  <sources>0</sources>
-  <listeners>0</listeners>
-  <listener_connections>0</listener_connections>
-</icestats>"#;
+        let xml = crabster_core::stats::xml::stats_xml(&state).await;
         let body = if path == "/status-json.xsl" {
-            xml.to_string()
+            crabster_core::stats::xml::stats_json(&state).await
         } else {
-            format!(
-                "<html><body><h1>Crabster</h1><pre>{}</pre></body></html>",
-                xml
-            )
+            // Transform the live stats XML with the built-in status stylesheet
+            // (an XSLT 1.0 subset, mirroring Icecast's /status.xsl).
+            match crabster_core::xslt::transform(&xml, DEFAULT_STATUS_XSL) {
+                Ok(html) => html,
+                Err(e) => {
+                    warn!("XSLT transform failed: {}", e);
+                    format!(
+                        "<html><body><h1>Crabster</h1><pre>{}</pre></body></html>",
+                        xml
+                    )
+                }
+            }
         };
         let content_type = if path == "/status-json.xsl" {
             "application/json"
@@ -1420,11 +1448,14 @@ async fn handle_legacy_admin(
 
     let cmd = crabster_core::admin::AdminCommand::from_path(path);
     let response = match cmd {
-        Some(command) => crabster_core::admin::handle_admin_command(
-            &command,
-            &std::collections::HashMap::new(),
-            &state,
-        ),
+        Some(command) => {
+            crabster_core::admin::handle_admin_command(
+                &command,
+                &std::collections::HashMap::new(),
+                &state,
+            )
+            .await
+        }
         None => crabster_core::admin::AdminResponse::xml(
             404,
             "<icestats><error>unknown command</error></icestats>".into(),

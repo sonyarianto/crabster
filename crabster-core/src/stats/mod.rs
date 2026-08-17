@@ -6,6 +6,8 @@ use chrono::{DateTime, Utc};
 use dashmap::DashMap;
 use parking_lot::RwLock;
 
+pub mod xml;
+
 use crate::source::StreamMetadata;
 
 #[derive(Debug, Clone)]

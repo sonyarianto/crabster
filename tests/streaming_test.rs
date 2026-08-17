@@ -1148,6 +1148,83 @@ async fn test_listener_registered_and_kicked() {
     .unwrap();
 }
 
+#[tokio::test]
+async fn test_status_pages_render_live_stats() {
+    tokio::time::timeout(Duration::from_secs(30), async {
+        let server = common::TestServer::start().await;
+        let addr = server.stream_addr();
+        let mount = "/status-page.mp3";
+
+        let mut source_w = connect_source(&addr, mount).await;
+        // Stream some audio so the source stays connected and carries stats.
+        source_w
+            .write_all(&generate_test_audio(4096))
+            .await
+            .unwrap();
+
+        // /status.xsl: HTML transformed from the live stats XML.
+        let resp = server
+            .api_get_with_full_response(&format!(
+                "http://127.0.0.1:{}/status.xsl",
+                server.stream_port
+            ))
+            .await;
+        assert!(resp.contains("200 OK"), "got: {}", resp);
+        assert!(resp.contains("Content-Type: text/html"), "got: {}", resp);
+        assert!(
+            resp.contains("status-page.mp3"),
+            "status page should show the live mount, got: {}",
+            resp
+        );
+        assert!(
+            resp.contains("Crabster"),
+            "status page should show server id, got: {}",
+            resp
+        );
+
+        // /status-json.xsl: real JSON with live data.
+        let resp = server
+            .api_get_with_full_response(&format!(
+                "http://127.0.0.1:{}/status-json.xsl",
+                server.stream_port
+            ))
+            .await;
+        assert!(resp.contains("200 OK"), "got: {}", resp);
+        assert!(
+            resp.contains("Content-Type: application/json"),
+            "got: {}",
+            resp
+        );
+        let json: serde_json::Value =
+            serde_json::from_str(resp.split("\r\n\r\n").nth(1).unwrap_or("")).expect("valid json");
+        assert_eq!(json["icestats"]["sources"], 1, "got: {}", resp);
+        assert_eq!(
+            json["icestats"]["source"][0]["mount"], mount,
+            "got: {}",
+            resp
+        );
+
+        // /admin/stats.xml: raw icestats XML.
+        let resp = server
+            .api_get_with_full_response(&format!(
+                "http://127.0.0.1:{}/admin/stats.xml",
+                server.stream_port
+            ))
+            .await;
+        assert!(resp.contains("200 OK"), "got: {}", resp);
+        assert!(
+            resp.contains("<source mount=\"/status-page.mp3\">"),
+            "stats.xml should list live sources, got: {}",
+            resp
+        );
+
+        drop(source_w);
+        server.shutdown().await;
+    })
+    .await
+    .unwrap();
+}
+
 async fn read_audio(r: &mut tokio::io::ReadHalf<tokio::net::TcpStream>, target: usize) -> Vec<u8> {
     let mut data = Vec::new();
     let mut buf = [0u8; 4096];

@@ -85,6 +85,17 @@ adminroot = "/usr/share/crabster/admin"
 - `/admin/...` paths try the admin root first, then fall back to the legacy XML admin commands
 - Missing files return `404`
 
+## Status Pages
+
+Icecast-style status pages are served from live server state:
+
+- `/status.xsl` → HTML status page (transformed from live `<icestats>` XML by a built-in XSLT 1.0 subset engine)
+- `/status-json.xsl` → JSON status document
+- `/admin/stats.xml` → raw `<icestats>` XML (per-source listeners, bitrate, title, bytes, etc.)
+- `/admin/listmounts` → mount list
+
+Requests to `/status.xsl` and `/status-json.xsl` render on the fly from the current sources, so the pages always reflect live listener counts and metadata without a separate stats daemon.
+
 ## YP Directory Publishing
 
 Public mounts can be listed in a Yellow Pages directory (e.g. [dir.xiph.org](http://dir.xiph.org)) so listeners can discover them. Enable it in `crabster.toml`:

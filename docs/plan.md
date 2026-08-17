@@ -162,7 +162,7 @@ The server serves status at:
 
 ### Implementation Tasks
 
-_Status legend: ✅ implemented · ⚠️ partial · ❌ not implemented (as of commit `f315fc8` + listener management)_
+_Status legend: ✅ implemented · ⚠️ partial · ❌ not implemented (as of commit `f315fc8` + listener management + XSLT transform)_
 
 1. ✅ **TCP Listener** — Bind to configurable ports, accept connections
 2. ✅ **HTTP Parser** — Parse SOURCE, PUT, GET, HEAD, POST, OPTIONS methods (OPTIONS/DELETE etc. respond 501)
@@ -188,7 +188,7 @@ _Status legend: ✅ implemented · ⚠️ partial · ❌ not implemented (as of 
     - ✅ Htpasswd (file-based) — reads Apache htpasswd files (`$apr1$`, bcrypt, `{SHA}`, crypt), reloads on file change; unknown user defers to next provider, wrong password rejects
     - ✅ URL-based (HTTP callback)
     - ✅ Static (config-defined credentials)
-15. ❌ **XSLT Transform** — XSLT rendering for status pages (`/status.xsl` serves plain HTML)
+15. ✅ **XSLT Transform** — Built-in XSLT 1.0 subset engine (`crabster-core/src/xslt`) with a minimal XML parser; `/status.xsl` transforms live `<icestats>` XML into HTML, `/status-json.xsl` serves real JSON, `/admin/stats.xml` serves raw live XML
 16. ✅ **YP Directory** — Publish to `dir.xiph.org` (add/touch/remove via `yp_url` + `hostname` config; sends `sn`, `genre`, `type`, `b`, `listenurl` and uses the returned `SID`)
 
 ### Config Migration
@@ -598,7 +598,7 @@ Phase 1 ─── Core Protocol Parity ─────────────�
     ├── ✅ Legacy admin interface (placeholder responses)
     ├── ✅ Stats XML/JSON reporting
     ├── ✅ Authentication stack (anonymous, htpasswd, url, static)
-    ├── ❌ XSLT rendering
+    ├── ✅ XSLT rendering
     └── ✅ YP directory publishing
 
 Phase 2 ─── Modern Management ──────────────────────────────── Epoch 2

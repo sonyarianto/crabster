@@ -63,51 +63,46 @@ impl AdminResponse {
     }
 }
 
-pub fn handle_admin_command(
+pub async fn handle_admin_command(
     command: &AdminCommand,
     _params: &HashMap<String, String>,
-    _state: &crate::SharedState,
+    state: &crate::SharedState,
 ) -> AdminResponse {
     match command {
         AdminCommand::MountList => {
-            let xml = r#"<?xml version="1.0"?>
-<icestats>
-  <source mount="/stream">
-    <listeners>0</listeners>
-    <listener_connections>0</listener_connections>
-    <source_connected>0</source_connected>
-  </source>
-</icestats>"#;
-            AdminResponse::xml(200, xml.to_string())
+            let sources = state.sources.all_sources();
+            let mut xml = String::from("<?xml version=\"1.0\"?>\n<icestats>\n");
+            for source in &sources {
+                let listeners = source.info.stats.read().current_listeners;
+                xml.push_str(&format!(
+                    "  <source mount=\"{}\">\n    <listeners>{}</listeners>\n    <source_connected>{}</source_connected>\n  </source>\n",
+                    source.info.mount,
+                    listeners,
+                    if source.connected.load(std::sync::atomic::Ordering::Relaxed) {
+                        1
+                    } else {
+                        0
+                    }
+                ));
+            }
+            xml.push_str("</icestats>");
+            AdminResponse::xml(200, xml)
         }
         AdminCommand::Stats | AdminCommand::StatsXml => {
-            let xml = r#"<?xml version="1.0"?>
-<icestats>
-  <admin>crabster</admin>
-  <host>localhost</host>
-  <location>Earth</location>
-  <server_id>Crabster/0.1.0</server_id>
-  <server_start>0</server_start>
-  <source_total>0</source_total>
-  <sources>0</sources>
-  <listeners>0</listeners>
-  <listener_connections>0</listener_connections>
-</icestats>"#;
-            AdminResponse::xml(200, xml.to_string())
+            AdminResponse::xml(200, crate::stats::xml::stats_xml(state).await)
         }
         AdminCommand::ListClients => {
-            let xml = r#"<?xml version="1.0"?>
-<icestats>
-  <source mount="/stream">
-    <listener>
-      <id>0</id>
-      <ip>127.0.0.1</ip>
-      <user_agent>crabster</user_agent>
-      <connected>0</connected>
-    </listener>
-  </source>
-</icestats>"#;
-            AdminResponse::xml(200, xml.to_string())
+            let listeners = state.listeners.all_listeners();
+            let mut xml = String::from("<?xml version=\"1.0\"?>\n<icestats>\n");
+            for l in &listeners {
+                let info = l.info.read();
+                xml.push_str(&format!(
+                    "  <source mount=\"{}\">\n    <listener>\n      <id>{}</id>\n      <ip>{}</ip>\n      <user_agent>{}</user_agent>\n    </listener>\n  </source>\n",
+                    info.mount, info.id, info.ip, info.user_agent
+                ));
+            }
+            xml.push_str("</icestats>");
+            AdminResponse::xml(200, xml)
         }
         AdminCommand::KickClient => AdminResponse::xml(
             200,
@@ -122,22 +117,31 @@ pub fn handle_admin_command(
             "<icestats><metadata>success</metadata></icestats>".into(),
         ),
         AdminCommand::ListMounts => {
-            let xml = r#"<?xml version="1.0"?>
-<icestats>
-  <source mount="/stream">
-    <listeners>0</listeners>
-    <source_connected>0</source_connected>
-  </source>
-</icestats>"#;
-            AdminResponse::xml(200, xml.to_string())
+            let sources = state.sources.all_sources();
+            let mut xml = String::from("<?xml version=\"1.0\"?>\n<icestats>\n");
+            for source in &sources {
+                let listeners = source.info.stats.read().current_listeners;
+                xml.push_str(&format!(
+                    "  <source mount=\"{}\">\n    <listeners>{}</listeners>\n    <source_connected>{}</source_connected>\n  </source>\n",
+                    source.info.mount,
+                    listeners,
+                    if source.connected.load(std::sync::atomic::Ordering::Relaxed) {
+                        1
+                    } else {
+                        0
+                    }
+                ));
+            }
+            xml.push_str("</icestats>");
+            AdminResponse::xml(200, xml)
         }
         AdminCommand::ServerInfo => {
-            let xml = r#"<?xml version="1.0"?>
-<icestats>
-  <server_id>Crabster/0.1.0</server_id>
-  <hostname>localhost</hostname>
-</icestats>"#;
-            AdminResponse::xml(200, xml.to_string())
+            let xml = format!(
+                "<?xml version=\"1.0\"?>\n<icestats>\n  <server_id>Crabster/{}</server_id>\n  <hostname>{}</hostname>\n</icestats>",
+                env!("CARGO_PKG_VERSION"),
+                state.config.blocking_read().hostname
+            );
+            AdminResponse::xml(200, xml)
         }
     }
 }
