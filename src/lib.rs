@@ -24,6 +24,8 @@ pub struct ServerConfig {
     pub jwt_secret: String,
     pub shoutcast_compat: bool,
     pub shoutcast_mount: Option<String>,
+    pub yp_url: Option<String>,
+    pub hostname: String,
 }
 
 impl Default for ServerConfig {
@@ -38,6 +40,8 @@ impl Default for ServerConfig {
             jwt_secret: "crabster-jwt-secret-change-me-please".into(),
             shoutcast_compat: false,
             shoutcast_mount: None,
+            yp_url: None,
+            hostname: "localhost".into(),
         }
     }
 }
@@ -100,6 +104,22 @@ pub async fn run_with_config(
         crabster_hls::HlsConfig::default(),
     ));
     let _hls_handle = hls_manager.clone().start(Arc::clone(&core_state));
+
+    // Start YP directory publishing if a directory URL is configured.
+    if let Some(yp_url) = config.yp_url.clone() {
+        let yp_config = crabster_core::yp::YpConfig {
+            url: yp_url,
+            hostname: config.hostname.clone(),
+            stream_port: config.stream_port,
+            ..Default::default()
+        };
+        let yp_manager = Arc::new(crabster_core::yp::YpManager::new(
+            yp_config,
+            Arc::clone(&core_state),
+        ));
+        let _yp_handle = yp_manager.start();
+        info!("YP directory publishing enabled");
+    }
 
     let api_state: crabster_api::SharedApiState = Arc::new(crabster_api::ApiState {
         core: Arc::clone(&core_state),

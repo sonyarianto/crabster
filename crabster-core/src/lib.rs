@@ -6,6 +6,7 @@ pub mod listener;
 pub mod relay;
 pub mod source;
 pub mod stats;
+pub mod yp;
 
 use std::sync::Arc;
 use tokio::sync::RwLock;

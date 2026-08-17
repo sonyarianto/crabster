@@ -38,6 +38,17 @@ shoutcast_mount = "/live"
 
 The source connects to the stream port and sends only the password, then ICY headers. If `shoutcast_mount` is unset, the password is matched against configured mounts, falling back to the global `source_password` on mount `/`.
 
+## YP Directory Publishing
+
+Public mounts can be listed in a Yellow Pages directory (e.g. [dir.xiph.org](http://dir.xiph.org)) so listeners can discover them. Enable it in `crabster.toml`:
+
+```toml
+yp_url = "http://dir.xiph.org/cgi-bin/yp-cgi"
+hostname = "radio.example.org"
+```
+
+`hostname` must resolve to this server and be reachable from the public internet, since the directory checks the advertised listen URL. The server sends an `add` when a public mount connects, periodic `touch` updates with the listener count and current song, and a `remove` when it disconnects.
+
 ## Listen
 
 ```

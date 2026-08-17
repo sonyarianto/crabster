@@ -1,3 +1,5 @@
+#![allow(dead_code)] // not every test binary uses every helper
+
 use std::time::Duration;
 
 use crabster::{run_with_config, ServerConfig};

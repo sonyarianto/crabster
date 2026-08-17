@@ -189,7 +189,7 @@ _Status legend: ✅ implemented · ⚠️ partial · ❌ not implemented (as of 
     - ✅ URL-based (HTTP callback)
     - ✅ Static (config-defined credentials)
 15. ❌ **XSLT Transform** — XSLT rendering for status pages (`/status.xsl` serves plain HTML)
-16. ❌ **YP Directory** — Publish to `dir.xiph.org`
+16. ✅ **YP Directory** — Publish to `dir.xiph.org` (add/touch/remove via `yp_url` + `hostname` config; sends `sn`, `genre`, `type`, `b`, `listenurl` and uses the returned `SID`)
 
 ### Config Migration
 
@@ -599,7 +599,7 @@ Phase 1 ─── Core Protocol Parity ─────────────�
     ├── ✅ Stats XML/JSON reporting
     ├── ⚠️ Authentication stack (anon/url/static ✅, htpasswd ❌)
     ├── ❌ XSLT rendering
-    └── ❌ YP directory publishing
+    └── ✅ YP directory publishing
 
 Phase 2 ─── Modern Management ──────────────────────────────── Epoch 2
     ├── REST API (axum)
