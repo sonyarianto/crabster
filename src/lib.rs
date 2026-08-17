@@ -372,7 +372,29 @@ async fn handle_source(
 
     let buffer = Arc::new(parking_lot::RwLock::new(RingBuffer::new(65536)));
 
-    let welcome = format!("HTTP/1.0 200 OK\r\nContent-Type: {}\r\n\r\n", content_type);
+    // Advertise and parse in-stream ICY metadata only when the source opts in
+    // with the `icy-metadata: 1` request header and the format supports it.
+    // Without the opt-in the stream is passed through untouched, so encoders
+    // that never send metadata blocks are not corrupted.
+    let wants_metadata = headers
+        .get("icy-metadata")
+        .map(|v| v.trim() == "1")
+        .unwrap_or(false);
+    let icy_metaint = if wants_metadata {
+        state
+            .format_registry
+            .get(format_type)
+            .and_then(|f| f.icy_metadata_interval)
+    } else {
+        None
+    };
+    let welcome = match icy_metaint {
+        Some(interval) => format!(
+            "HTTP/1.0 200 OK\r\nContent-Type: {}\r\nicy-metaint: {}\r\n\r\n",
+            content_type, interval
+        ),
+        None => format!("HTTP/1.0 200 OK\r\nContent-Type: {}\r\n\r\n", content_type),
+    };
     run_source_stream(
         mount.to_string(),
         state,
@@ -381,7 +403,7 @@ async fn handle_source(
         SourceStreamOptions {
             welcome: welcome.as_bytes(),
             busy: b"HTTP/1.0 503 Service Unavailable\r\n\r\n",
-            icy_metaint: None,
+            icy_metaint,
         },
         reader,
         writer,
@@ -885,12 +907,8 @@ async fn handle_get(
     let mut pos = buf_clone.read().current_position();
 
     loop {
-        tokio::time::sleep(tokio::time::Duration::from_millis(50)).await;
-
-        if !source.connected.load(std::sync::atomic::Ordering::Relaxed) {
-            break;
-        }
-
+        // Drain any buffered audio first so bytes written just before the
+        // source disconnects are not left behind.
         let current_pos = buf_clone.read().current_position();
         if current_pos > pos {
             let data = buf_clone.read().read(pos);
@@ -898,7 +916,12 @@ async fn handle_get(
             if !data.is_empty() && writer.write_all(&data).await.is_err() {
                 break;
             }
+        } else if !source.connected.load(std::sync::atomic::Ordering::Relaxed) {
+            // No more data and the source is gone.
+            break;
         }
+
+        tokio::time::sleep(tokio::time::Duration::from_millis(50)).await;
     }
 }
 

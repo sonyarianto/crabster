@@ -364,6 +364,150 @@ async fn test_shoutcast_invalid_password_rejected() {
     .unwrap();
 }
 
+#[tokio::test]
+async fn test_http_source_icy_metadata_opt_in() {
+    tokio::time::timeout(Duration::from_secs(30), async {
+        let server = common::TestServer::start().await;
+        let mount = "/icy-meta.mp3";
+
+        let source = tokio::net::TcpStream::connect(server.stream_addr())
+            .await
+            .unwrap();
+        let (mut source_r, mut source_w) = tokio::io::split(source);
+
+        // Opt in to in-stream metadata via the icy-metadata request header.
+        let source_headers = format!(
+            "SOURCE {} HTTP/1.0\r\n\
+             Authorization: Basic c291cmNlOmhhY2ttZQ==\r\n\
+             Content-Type: audio/mpeg\r\n\
+             icy-metadata: 1\r\n\r\n",
+            mount
+        );
+        source_w.write_all(source_headers.as_bytes()).await.unwrap();
+
+        let resp_bytes = read_until_header_end(&mut source_r).await;
+        let resp = String::from_utf8_lossy(&resp_bytes);
+        assert!(resp.contains("200 OK"), "got: {}", resp);
+        assert!(
+            resp.contains("icy-metaint: 8192"),
+            "Opted-in source should get icy-metaint, got: {}",
+            resp
+        );
+
+        // Stream 8192 audio bytes, then an in-stream metadata block, then more
+        // audio, keeping the source connected long enough to query the API.
+        let audio_data = generate_test_audio(20000);
+        let sender = tokio::spawn(async move {
+            source_w.write_all(&audio_data[..8192]).await.unwrap();
+            tokio::time::sleep(Duration::from_millis(20)).await;
+            let mut payload = b"StreamTitle='HTTP Song';".to_vec();
+            payload.resize(32, 0);
+            let mut block = vec![2u8]; // 32-byte payload = 2 units of 16
+            block.extend_from_slice(&payload);
+            source_w.write_all(&block).await.unwrap();
+            for chunk in audio_data[8192..].chunks(4096) {
+                source_w.write_all(chunk).await.unwrap();
+                tokio::time::sleep(Duration::from_millis(100)).await;
+            }
+        });
+
+        let mut title_seen = false;
+        for _ in 0..30 {
+            let mounts = server.api_get("/api/v1/mounts").await.unwrap();
+            if mounts.contains("\"title\":\"HTTP Song\"") {
+                title_seen = true;
+                break;
+            }
+            tokio::time::sleep(Duration::from_millis(100)).await;
+        }
+        assert!(
+            title_seen,
+            "In-stream title should be parsed from an opted-in HTTP source"
+        );
+
+        sender.await.ok();
+        server.shutdown().await;
+    })
+    .await
+    .unwrap();
+}
+
+#[tokio::test]
+async fn test_http_source_without_metadata_opt_in_passthrough() {
+    tokio::time::timeout(Duration::from_secs(30), async {
+        let server = common::TestServer::start().await;
+        let mount = "/plain.mp3";
+
+        let source = tokio::net::TcpStream::connect(server.stream_addr())
+            .await
+            .unwrap();
+        let (mut source_r, mut source_w) = tokio::io::split(source);
+
+        // No icy-metadata header: stream must pass through untouched.
+        let source_headers = format!(
+            "SOURCE {} HTTP/1.0\r\n\
+             Authorization: Basic c291cmNlOmhhY2ttZQ==\r\n\
+             Content-Type: audio/mpeg\r\n\r\n",
+            mount
+        );
+        source_w.write_all(source_headers.as_bytes()).await.unwrap();
+
+        let resp_bytes = read_until_header_end(&mut source_r).await;
+        let resp = String::from_utf8_lossy(&resp_bytes);
+        assert!(resp.contains("200 OK"), "got: {}", resp);
+        assert!(
+            !resp.contains("icy-metaint"),
+            "Source without opt-in should not get icy-metaint, got: {}",
+            resp
+        );
+
+        // Attach a listener before sending data.
+        let listener = tokio::net::TcpStream::connect(server.stream_addr())
+            .await
+            .unwrap();
+        let (mut listener_r, mut listener_w) = tokio::io::split(listener);
+        let get_request = format!("GET {} HTTP/1.0\r\n\r\n", mount);
+        listener_w.write_all(get_request.as_bytes()).await.unwrap();
+        drop(listener_w);
+        let _ = read_until_header_end(&mut listener_r).await;
+
+        // Stream more than one metaint worth of audio with no metadata blocks,
+        // then disconnect immediately: the listener must still receive every
+        // byte (the server drains the buffer on source disconnect).
+        let audio_data = generate_test_audio(9000);
+        let sender = tokio::spawn(async move {
+            for chunk in audio_data.chunks(4096) {
+                source_w.write_all(chunk).await.unwrap();
+                tokio::time::sleep(Duration::from_millis(100)).await;
+            }
+            // source_w drops here -> EOF -> server marks the source disconnected
+        });
+
+        let mut stream_data = Vec::new();
+        let mut read_buf = [0u8; 4096];
+        let start = std::time::Instant::now();
+        while start.elapsed() < Duration::from_secs(5) && stream_data.len() < 9000 {
+            match listener_r.read(&mut read_buf).await {
+                Ok(0) => break,
+                Ok(n) => stream_data.extend_from_slice(&read_buf[..n]),
+                Err(_) => break,
+            }
+        }
+
+        assert_eq!(
+            stream_data.len(),
+            9000,
+            "All audio must pass through even after source disconnect, got {}",
+            stream_data.len()
+        );
+
+        sender.await.ok();
+        server.shutdown().await;
+    })
+    .await
+    .unwrap();
+}
+
 fn generate_test_audio(size: usize) -> Vec<u8> {
     (0..size).map(|i| (i % 256) as u8).collect()
 }
