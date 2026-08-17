@@ -1,5 +1,7 @@
 # Crabster
 
+[![CI](https://github.com/sonyarianto/crabster/actions/workflows/ci.yml/badge.svg)](https://github.com/sonyarianto/crabster/actions/workflows/ci.yml)
+
 **Repository:** [github.com/sonyarianto/crabster](https://github.com/sonyarianto/crabster)
 
 A streaming media server written in Rust — protocol-compatible with existing encoders and listeners.
