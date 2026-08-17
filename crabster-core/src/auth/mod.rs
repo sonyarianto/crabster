@@ -76,6 +76,12 @@ pub struct AuthStack {
     providers: Vec<(String, Arc<dyn AuthProvider + 'static>)>,
 }
 
+impl Default for AuthStack {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
 impl AuthStack {
     pub fn new() -> Self {
         Self {

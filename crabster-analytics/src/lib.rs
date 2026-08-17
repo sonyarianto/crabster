@@ -15,6 +15,12 @@ pub struct AnalyticsCollector {
     started_at: std::time::Instant,
 }
 
+impl Default for AnalyticsCollector {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
 impl AnalyticsCollector {
     pub fn new() -> Self {
         Self {
@@ -38,7 +44,7 @@ impl AnalyticsCollector {
     pub fn all_mounts(&self) -> Vec<Arc<RwLock<MountAnalytics>>> {
         self.per_mount
             .iter()
-            .map(|r| Arc::clone(&r.value()))
+            .map(|r| Arc::clone(r.value()))
             .collect()
     }
 
@@ -93,9 +99,7 @@ impl AnalyticsCollector {
 
 fn classify_user_agent(ua: &str) -> String {
     let ua = ua.to_lowercase();
-    if ua.contains("iphone")
-        || ua.contains("ipad")
-        || ua.contains("android") && !ua.contains("tv")
+    if ua.contains("iphone") || ua.contains("ipad") || ua.contains("android") && !ua.contains("tv")
     {
         "mobile".into()
     } else if ua.contains("smarttv")
@@ -125,17 +129,26 @@ mod tests {
 
     #[test]
     fn ua_mobile_iphone() {
-        assert_eq!(classify_user_agent("Mozilla/5.0 (iPhone; CPU iPhone OS 17_0)"), "mobile");
+        assert_eq!(
+            classify_user_agent("Mozilla/5.0 (iPhone; CPU iPhone OS 17_0)"),
+            "mobile"
+        );
     }
 
     #[test]
     fn ua_mobile_ipad() {
-        assert_eq!(classify_user_agent("Mozilla/5.0 (iPad; CPU OS 17_0)"), "mobile");
+        assert_eq!(
+            classify_user_agent("Mozilla/5.0 (iPad; CPU OS 17_0)"),
+            "mobile"
+        );
     }
 
     #[test]
     fn ua_mobile_android() {
-        assert_eq!(classify_user_agent("Mozilla/5.0 (Linux; Android 14)"), "mobile");
+        assert_eq!(
+            classify_user_agent("Mozilla/5.0 (Linux; Android 14)"),
+            "mobile"
+        );
     }
 
     #[test]

@@ -303,7 +303,11 @@ mod tests {
             s.current_data.extend_from_slice(b"data");
             s.seal_segment();
             // after i+1 segments, window should never exceed 3
-            assert!(s.segments.len() <= 3, "iteration {i}: len {}", s.segments.len());
+            assert!(
+                s.segments.len() <= 3,
+                "iteration {i}: len {}",
+                s.segments.len()
+            );
         }
         assert!(s.segments.len() == 3);
         // with 5 writes and window 3, sequences should be 2, 3, 4

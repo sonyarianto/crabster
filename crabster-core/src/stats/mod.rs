@@ -75,6 +75,12 @@ pub struct StatsCollector {
     mount_metadata: DashMap<String, Arc<RwLock<StreamMetadata>>>,
 }
 
+impl Default for StatsCollector {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
 #[derive(Debug)]
 pub struct GlobalStats {
     pub started_at: Instant,
@@ -86,6 +92,12 @@ pub struct GlobalStats {
     pub peak_listeners: AtomicU64,
     pub total_bytes_sent: AtomicU64,
     pub total_bytes_received: AtomicU64,
+}
+
+impl Default for GlobalStats {
+    fn default() -> Self {
+        Self::new()
+    }
 }
 
 impl GlobalStats {
@@ -132,7 +144,7 @@ impl StatsCollector {
     pub fn get_mounts(&self) -> Vec<Arc<RwLock<MountStats>>> {
         self.per_mount
             .iter()
-            .map(|r| Arc::clone(&r.value()))
+            .map(|r| Arc::clone(r.value()))
             .collect()
     }
 
@@ -152,7 +164,7 @@ impl StatsCollector {
     pub fn get_metadata(&self, mount: &str) -> Option<Arc<RwLock<StreamMetadata>>> {
         self.mount_metadata
             .get(mount)
-            .map(|r| Arc::clone(&r.value()))
+            .map(|r| Arc::clone(r.value()))
     }
 
     pub fn update_metadata(&self, mount: &str, metadata: StreamMetadata) {

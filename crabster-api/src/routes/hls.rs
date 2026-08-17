@@ -10,7 +10,7 @@ use crate::SharedApiState;
 
 fn normalize_mount(state: &crate::SharedApiState, mount: &str) -> String {
     if state.core.sources.mount_exists(mount)
-        || state.hls.as_ref().map_or(false, |h| h.has_session(mount))
+        || state.hls.as_ref().is_some_and(|h| h.has_session(mount))
     {
         mount.to_string()
     } else {
@@ -19,7 +19,7 @@ fn normalize_mount(state: &crate::SharedApiState, mount: &str) -> String {
             || state
                 .hls
                 .as_ref()
-                .map_or(false, |h| h.has_session(&with_slash))
+                .is_some_and(|h| h.has_session(&with_slash))
         {
             with_slash
         } else {

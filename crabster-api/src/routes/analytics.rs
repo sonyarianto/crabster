@@ -160,7 +160,7 @@ pub async fn get_referrers(
                 let referrers = a.read().referrers.clone();
                 let sorted: Vec<Value> = {
                     let mut pairs: Vec<_> = referrers.into_iter().collect();
-                    pairs.sort_by(|a, b| b.1.cmp(&a.1));
+                    pairs.sort_by_key(|p| std::cmp::Reverse(p.1));
                     pairs
                         .into_iter()
                         .map(|(k, v)| json!({ "referrer": k, "count": v }))

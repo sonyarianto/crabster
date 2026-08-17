@@ -17,6 +17,12 @@ pub struct OriginNode {
     watchers: WatcherMap,
 }
 
+impl Default for OriginNode {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
 impl OriginNode {
     pub fn new() -> Self {
         Self {
@@ -186,14 +192,9 @@ impl OriginNode {
             let _ = writer.write_all(&burst).await;
         }
 
-        loop {
-            match rx.recv().await {
-                Ok(data) => {
-                    if writer.write_all(&data).await.is_err() {
-                        break;
-                    }
-                }
-                Err(_) => break,
+        while let Ok(data) = rx.recv().await {
+            if writer.write_all(&data).await.is_err() {
+                break;
             }
         }
 

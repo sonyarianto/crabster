@@ -26,6 +26,13 @@ impl TestServer {
             ..Default::default()
         };
 
+        Self::start_with(config).await
+    }
+
+    pub async fn start_with(config: ServerConfig) -> Self {
+        let stream_port = config.stream_port;
+        let api_port = config.api_port;
+
         let (shutdown_tx, shutdown_rx) = tokio::sync::oneshot::channel::<()>();
 
         let handle = tokio::spawn(async move {

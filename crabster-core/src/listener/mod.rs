@@ -47,6 +47,12 @@ pub struct ListenerManager {
     total_listeners: AtomicU64,
 }
 
+impl Default for ListenerManager {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
 impl ListenerManager {
     pub fn new() -> Self {
         Self {
@@ -56,10 +62,7 @@ impl ListenerManager {
     }
 
     pub fn add_listener(&self, mount: String, listener: Arc<Listener>) {
-        self.listeners
-            .entry(mount)
-            .or_insert_with(Vec::new)
-            .push(listener);
+        self.listeners.entry(mount).or_default().push(listener);
         self.total_listeners.fetch_add(1, Ordering::Relaxed);
     }
 
@@ -123,7 +126,11 @@ impl ListenerManager {
                 if listener.disconnected.load(Ordering::Relaxed) {
                     continue;
                 }
-                if let Err(_) = listener.sender.send(ListenerEvent::Data(data.clone())) {
+                if listener
+                    .sender
+                    .send(ListenerEvent::Data(data.clone()))
+                    .is_err()
+                {
                     listener.disconnected.store(true, Ordering::Relaxed);
                 }
             }
@@ -136,9 +143,10 @@ impl ListenerManager {
                 if listener.disconnected.load(Ordering::Relaxed) {
                     continue;
                 }
-                if let Err(_) = listener
+                if listener
                     .sender
                     .send(ListenerEvent::Metadata(Arc::clone(&metadata)))
+                    .is_err()
                 {
                     listener.disconnected.store(true, Ordering::Relaxed);
                 }

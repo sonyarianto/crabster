@@ -22,6 +22,8 @@ pub struct ServerConfig {
     pub cluster_mode: ClusterMode,
     pub db_path: Option<String>,
     pub jwt_secret: String,
+    pub shoutcast_compat: bool,
+    pub shoutcast_mount: Option<String>,
 }
 
 impl Default for ServerConfig {
@@ -34,6 +36,8 @@ impl Default for ServerConfig {
             cluster_mode: ClusterMode::Origin,
             db_path: Some("crabster.db".into()),
             jwt_secret: "crabster-jwt-secret-change-me-please".into(),
+            shoutcast_compat: false,
+            shoutcast_mount: None,
         }
     }
 }
@@ -68,7 +72,11 @@ pub async fn run_with_config(
         }
     };
 
-    let core_config = Config::default();
+    let mut core_config = Config::default();
+    if let Some(listen) = core_config.listen_sockets.first_mut() {
+        listen.shoutcast_compat = config.shoutcast_compat;
+        listen.shoutcast_mount = config.shoutcast_mount.clone();
+    }
 
     let core_state: SharedState = Arc::new(AppState {
         config: RwLock::new(core_config.clone()),
@@ -200,8 +208,14 @@ async fn handle_connection(
         return Ok(());
     }
 
-    let parts: Vec<&str> = request_line.split_whitespace().collect();
-    if parts.len() < 2 {
+    let request_line_trimmed = request_line.trim_end_matches(['\r', '\n']);
+    let parts: Vec<&str> = request_line_trimmed.split_whitespace().collect();
+
+    if !(parts.len() >= 2 && is_http_method(parts[0])) {
+        // Not an HTTP request line: try the Shoutcast v1 password handshake.
+        if shoutcast_compat_enabled(&state).await {
+            handle_shoutcast_source(request_line_trimmed, buf_reader, writer, state, db).await;
+        }
         return Ok(());
     }
 
@@ -262,7 +276,7 @@ fn extract_basic_auth(
 async fn handle_source(
     mount: &str,
     headers: &std::collections::HashMap<String, String>,
-    mut reader: BufReader<tokio::io::ReadHalf<tokio::net::TcpStream>>,
+    reader: BufReader<tokio::io::ReadHalf<tokio::net::TcpStream>>,
     mut writer: tokio::io::WriteHalf<tokio::net::TcpStream>,
     state: SharedState,
     db: Option<crabster_db::Database>,
@@ -358,6 +372,134 @@ async fn handle_source(
 
     let buffer = Arc::new(parking_lot::RwLock::new(RingBuffer::new(65536)));
 
+    let welcome = format!("HTTP/1.0 200 OK\r\nContent-Type: {}\r\n\r\n", content_type);
+    run_source_stream(
+        mount.to_string(),
+        state,
+        info,
+        buffer,
+        SourceStreamOptions {
+            welcome: welcome.as_bytes(),
+            busy: b"HTTP/1.0 503 Service Unavailable\r\n\r\n",
+            icy_metaint: None,
+        },
+        reader,
+        writer,
+    )
+    .await;
+}
+
+/// Response bytes sent to the source after registration (welcome) and when the
+/// mount is already taken (busy), plus the optional SHOUTcast metadata interval
+/// used to strip in-stream metadata blocks from the audio.
+struct SourceStreamOptions<'a> {
+    welcome: &'a [u8],
+    busy: &'a [u8],
+    icy_metaint: Option<u16>,
+}
+
+/// A parsed SHOUTcast metadata payload ("StreamTitle='...';StreamUrl='...';"
+/// style).
+struct ParsedIcyMetadata {
+    title: Option<String>,
+    url: Option<String>,
+}
+
+/// Parses a "StreamTitle='...';StreamUrl='...';" payload, which may be
+/// null-padded to a multiple of 16 bytes.
+fn parse_icy_metadata(payload: &str) -> ParsedIcyMetadata {
+    let mut parsed = ParsedIcyMetadata {
+        title: None,
+        url: None,
+    };
+    for part in payload.split(';') {
+        let part = part.trim().trim_matches('\0');
+        if let Some((key, value)) = part.split_once('=') {
+            let value = value.trim().trim_matches('\'');
+            match key.trim() {
+                "StreamTitle" => parsed.title = Some(value.to_string()),
+                "StreamUrl" => parsed.url = Some(value.to_string()),
+                _ => {}
+            }
+        }
+    }
+    parsed
+}
+
+/// Strips SHOUTcast in-stream metadata blocks (a 1-byte length in 16-byte
+/// units followed by the payload, inserted by the source every `metaint`
+/// audio bytes) so listeners only receive clean audio.
+struct IcyMetaParser {
+    metaint: usize,
+    remaining_audio: usize,
+    meta_len: usize,
+    meta_collected: usize,
+    meta_buf: Vec<u8>,
+}
+
+impl IcyMetaParser {
+    fn new(metaint: u16) -> Self {
+        let metaint = metaint as usize;
+        Self {
+            metaint,
+            remaining_audio: metaint,
+            meta_len: 0,
+            meta_collected: 0,
+            meta_buf: Vec::new(),
+        }
+    }
+
+    /// Feed raw source bytes; returns the audio bytes to store, plus the parsed
+    /// metadata whenever a block completes.
+    fn feed(&mut self, mut data: &[u8]) -> (Vec<u8>, Option<ParsedIcyMetadata>) {
+        let mut audio = Vec::with_capacity(data.len());
+        let mut parsed = None;
+        while !data.is_empty() {
+            if self.meta_len == 0 {
+                if self.remaining_audio > 0 {
+                    let take = self.remaining_audio.min(data.len());
+                    audio.extend_from_slice(&data[..take]);
+                    self.remaining_audio -= take;
+                    data = &data[take..];
+                } else {
+                    // Next byte is the metadata block length in 16-byte units.
+                    let len_byte = data[0];
+                    data = &data[1..];
+                    if len_byte == 0 {
+                        self.remaining_audio = self.metaint;
+                    } else {
+                        self.meta_len = len_byte as usize * 16;
+                        self.meta_collected = 0;
+                        self.meta_buf.clear();
+                    }
+                }
+            } else {
+                let take = (self.meta_len - self.meta_collected).min(data.len());
+                self.meta_buf.extend_from_slice(&data[..take]);
+                self.meta_collected += take;
+                data = &data[take..];
+                if self.meta_collected == self.meta_len {
+                    parsed = Some(parse_icy_metadata(&String::from_utf8_lossy(&self.meta_buf)));
+                    self.meta_len = 0;
+                    self.remaining_audio = self.metaint;
+                }
+            }
+        }
+        (audio, parsed)
+    }
+}
+
+/// Registers a source and pumps its bytes into the ring buffer until EOF,
+/// then unregisters it. Shared by the HTTP SOURCE/PUT and Shoutcast v1 paths.
+async fn run_source_stream(
+    mount: String,
+    state: SharedState,
+    info: Arc<SourceInfo>,
+    buffer: Arc<parking_lot::RwLock<RingBuffer>>,
+    options: SourceStreamOptions<'_>,
+    mut reader: BufReader<tokio::io::ReadHalf<tokio::net::TcpStream>>,
+    mut writer: tokio::io::WriteHalf<tokio::net::TcpStream>,
+) {
     let source = Arc::new(Source {
         info: Arc::clone(&info),
         buffer: Arc::clone(&buffer),
@@ -365,34 +507,60 @@ async fn handle_source(
         running: std::sync::atomic::AtomicBool::new(true),
     });
 
-    if !state
-        .sources
-        .register(mount.to_string(), Arc::clone(&source))
-    {
-        let _ = writer
-            .write_all(b"HTTP/1.0 503 Service Unavailable\r\n\r\n")
-            .await;
+    if !state.sources.register(mount.clone(), Arc::clone(&source)) {
+        let _ = writer.write_all(options.busy).await;
         return;
     }
 
-    let _ = writer
-        .write_all(format!("HTTP/1.0 200 OK\r\nContent-Type: {}\r\n\r\n", content_type).as_bytes())
-        .await;
+    if writer.write_all(options.welcome).await.is_err() {
+        source
+            .connected
+            .store(false, std::sync::atomic::Ordering::Relaxed);
+        source
+            .running
+            .store(false, std::sync::atomic::Ordering::Relaxed);
+        state.sources.unregister(&mount);
+        return;
+    }
 
-    info!("Source connected: {} ({})", mount, content_type);
+    info!("Source connected: {} ({})", mount, info.format.mime_type());
 
+    let mut icy_parser = options.icy_metaint.map(IcyMetaParser::new);
     let mut buf = vec![0u8; 8192];
     loop {
         match reader.read(&mut buf).await {
             Ok(0) => break,
             Ok(n) => {
-                let data = &buf[..n];
-                buffer.write().write(data);
-                state
-                    .stats
-                    .global()
-                    .total_bytes_received
-                    .fetch_add(n as u64, std::sync::atomic::Ordering::Relaxed);
+                let raw = &buf[..n];
+                if let Some(parser) = &mut icy_parser {
+                    let (data, parsed) = parser.feed(raw);
+                    if let Some(metadata) = parsed {
+                        let mut meta = info.metadata.write();
+                        if let Some(title) = metadata.title {
+                            meta.title = Some(title);
+                        }
+                        if let Some(url) = metadata.url {
+                            meta.url = Some(url);
+                        }
+                        drop(meta);
+                        info.stats.write().metadata_updates += 1;
+                    }
+                    if !data.is_empty() {
+                        buffer.write().write(&data);
+                        state
+                            .stats
+                            .global()
+                            .total_bytes_received
+                            .fetch_add(data.len() as u64, std::sync::atomic::Ordering::Relaxed);
+                    }
+                } else {
+                    buffer.write().write(raw);
+                    state
+                        .stats
+                        .global()
+                        .total_bytes_received
+                        .fetch_add(n as u64, std::sync::atomic::Ordering::Relaxed);
+                }
             }
             Err(_) => break,
         }
@@ -404,8 +572,208 @@ async fn handle_source(
     source
         .running
         .store(false, std::sync::atomic::Ordering::Relaxed);
-    state.sources.unregister(mount);
+    state.sources.unregister(&mount);
     info!("Source disconnected: {}", mount);
+}
+
+fn is_http_method(method: &str) -> bool {
+    matches!(
+        method.to_uppercase().as_str(),
+        "SOURCE"
+            | "PUT"
+            | "GET"
+            | "HEAD"
+            | "POST"
+            | "OPTIONS"
+            | "DELETE"
+            | "PATCH"
+            | "TRACE"
+            | "CONNECT"
+    )
+}
+
+async fn shoutcast_compat_enabled(state: &SharedState) -> bool {
+    state
+        .config
+        .read()
+        .await
+        .listen_sockets
+        .first()
+        .map(|l| l.shoutcast_compat)
+        .unwrap_or(false)
+}
+
+/// Resolve the mount for a Shoutcast v1 password connection and validate the
+/// password against it. Mirrors Icecast: use the configured `shoutcast_mount`
+/// if set, otherwise match the password against configured mounts, falling
+/// back to the global source password on mount "/".
+async fn resolve_shoutcast_mount(
+    password: &str,
+    state: &SharedState,
+    db: &Option<crabster_db::Database>,
+) -> Option<String> {
+    let configured_mount = {
+        let config = state.config.read().await;
+        config
+            .listen_sockets
+            .first()
+            .and_then(|l| l.shoutcast_mount.clone())
+    };
+
+    if let Some(mount) = configured_mount {
+        let password_ok = if let Some(ref db) = db {
+            match db.get_mount_config(&mount) {
+                Ok(Some(config)) => config.source_password == password,
+                Ok(None) => {
+                    let config = state.config.read().await;
+                    password == config.authentication.source_password
+                }
+                Err(_) => false,
+            }
+        } else {
+            let config = state.config.read().await;
+            password == config.authentication.source_password
+        };
+        return password_ok.then_some(mount);
+    }
+
+    // No explicit shoutcast mount: match the password against configured mounts.
+    if let Some(ref db) = db {
+        if let Ok(Some(config)) = db.find_mount_by_source_password(password) {
+            return Some(config.mount_name);
+        }
+    }
+
+    let config = state.config.read().await;
+    (password == config.authentication.source_password).then_some("/".into())
+}
+
+/// Handles a legacy Shoutcast v1 source: a bare password line instead of an
+/// HTTP request. On success replies `OK2`, parses the ICY headers that follow,
+/// then streams the source into the ring buffer.
+async fn handle_shoutcast_source(
+    password_line: &str,
+    mut reader: BufReader<tokio::io::ReadHalf<tokio::net::TcpStream>>,
+    mut writer: tokio::io::WriteHalf<tokio::net::TcpStream>,
+    state: SharedState,
+    db: Option<crabster_db::Database>,
+) {
+    let password = password_line.trim();
+    if password.is_empty() {
+        return;
+    }
+
+    let mount = match resolve_shoutcast_mount(password, &state, &db).await {
+        Some(m) => m,
+        None => {
+            let _ = writer.write_all(b"invalid password\r\n").await;
+            return;
+        }
+    };
+
+    if state.sources.mount_exists(&mount) {
+        let _ = writer.write_all(b"mountpoint in use\r\n").await;
+        return;
+    }
+
+    let _ = writer.write_all(b"OK2\r\n").await;
+
+    // Read ICY headers terminated by an empty line.
+    let mut icy_headers: std::collections::HashMap<String, String> =
+        std::collections::HashMap::new();
+    loop {
+        let mut line = String::new();
+        match reader.read_line(&mut line).await {
+            Ok(0) => break,
+            Err(_) => return,
+            Ok(_) => {}
+        }
+        let trimmed = line.trim_end_matches(['\r', '\n']);
+        if trimmed.is_empty() {
+            break;
+        }
+        if let Some((key, value)) = trimmed.split_once(':') {
+            icy_headers.insert(key.trim().to_lowercase(), value.trim().to_string());
+        }
+    }
+
+    let bitrate = icy_headers
+        .get("icy-bitrate")
+        .and_then(|b| b.parse::<u32>().ok());
+    let public = icy_headers
+        .get("icy-pub")
+        .map(|p| p.trim() == "1")
+        .unwrap_or(true);
+    let icy_name = icy_headers.get("icy-name").cloned();
+    let icy_genre = icy_headers.get("icy-genre").cloned();
+    let icy_url = icy_headers.get("icy-url").cloned();
+
+    // No Content-Type in the Shoutcast protocol: prefer a DB-configured format,
+    // otherwise assume MP3 (the dominant Shoutcast codec).
+    let format_type = db
+        .as_ref()
+        .and_then(|db| db.get_mount_config(&mount).ok().flatten())
+        .and_then(|config| config.format)
+        .map(|ct| crabster_core::format::FormatType::from_content_type(&ct))
+        .unwrap_or(crabster_core::format::FormatType::Mp3);
+
+    let mount_stats = state.stats.ensure_mount(&mount);
+    let info = Arc::new(SourceInfo {
+        id: uuid::Uuid::new_v4(),
+        mount: mount.clone(),
+        connected_at: std::time::Instant::now(),
+        client_ip: String::new(),
+        user_agent: "Shoutcast/1.0".into(),
+        format: format_type,
+        audio_info: std::collections::HashMap::new(),
+        bitrate,
+        quality: None,
+        channels: None,
+        sample_rate: None,
+        max_listeners: None,
+        public,
+        hidden: false,
+        fallback_mount: None,
+        fallback_override: false,
+        fallback_when_full: false,
+        burst_size: 65536,
+        metadata: Arc::new(parking_lot::RwLock::new(StreamMetadata {
+            icy_name,
+            icy_genre,
+            icy_url,
+            icy_br: bitrate,
+            ..Default::default()
+        })),
+        stats: mount_stats,
+    });
+
+    let buffer = Arc::new(parking_lot::RwLock::new(RingBuffer::new(65536)));
+
+    // Advertise the metadata interval so the source inserts in-stream metadata
+    // blocks, which the stream pump then strips and parses.
+    let icy_metaint = state
+        .format_registry
+        .get(format_type)
+        .and_then(|f| f.icy_metadata_interval);
+    let welcome = match icy_metaint {
+        Some(interval) => format!("icy-caps: 11\r\nicy-metaint: {}\r\n\r\n", interval),
+        None => "icy-caps: 11\r\n\r\n".to_string(),
+    };
+
+    run_source_stream(
+        mount,
+        state,
+        info,
+        buffer,
+        SourceStreamOptions {
+            welcome: welcome.as_bytes(),
+            busy: b"mountpoint in use\r\n",
+            icy_metaint,
+        },
+        reader,
+        writer,
+    )
+    .await;
 }
 
 async fn handle_get(
@@ -509,7 +877,7 @@ async fn handle_get(
          Expires: 0\r\n\r\n",
     );
 
-    if let Err(_) = writer.write_all(response.as_bytes()).await {
+    if writer.write_all(response.as_bytes()).await.is_err() {
         return;
     }
 
@@ -527,10 +895,8 @@ async fn handle_get(
         if current_pos > pos {
             let data = buf_clone.read().read(pos);
             pos = current_pos;
-            if !data.is_empty() {
-                if let Err(_) = writer.write_all(&data).await {
-                    break;
-                }
+            if !data.is_empty() && writer.write_all(&data).await.is_err() {
+                break;
             }
         }
     }
@@ -591,4 +957,88 @@ async fn handle_legacy_admin(
             .as_bytes(),
         )
         .await;
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    /// Builds a full SHOUTcast metadata block: 1 length byte (payload size in
+    /// 16-byte units) followed by the null-padded payload.
+    fn meta_block(title: &str) -> Vec<u8> {
+        let payload = format!("StreamTitle='{}';", title);
+        let units = (payload.len() + 15) / 16;
+        let mut block = vec![units as u8];
+        let mut body = payload.into_bytes();
+        body.resize(units * 16, 0);
+        block.extend_from_slice(&body);
+        block
+    }
+
+    #[test]
+    fn icy_parser_passes_audio_through() {
+        let mut p = IcyMetaParser::new(8);
+        let (audio, parsed) = p.feed(b"12345678");
+        assert_eq!(&audio, b"12345678");
+        assert!(parsed.is_none());
+    }
+
+    #[test]
+    fn icy_parser_strips_metadata_block() {
+        let mut p = IcyMetaParser::new(8);
+        let mut data = b"12345678".to_vec();
+        data.extend_from_slice(&meta_block("Test Song"));
+        data.extend_from_slice(b"ABCDEFGH");
+        let (audio, parsed) = p.feed(&data);
+        assert_eq!(&audio, b"12345678ABCDEFGH");
+        let parsed = parsed.expect("metadata should be parsed");
+        assert_eq!(parsed.title.as_deref(), Some("Test Song"));
+    }
+
+    #[test]
+    fn icy_parser_handles_zero_length_metadata() {
+        let mut p = IcyMetaParser::new(8);
+        let mut data = b"12345678".to_vec();
+        data.push(0); // empty metadata block
+        data.extend_from_slice(b"ABCDEFGH");
+        let (audio, parsed) = p.feed(&data);
+        assert_eq!(&audio, b"12345678ABCDEFGH");
+        assert!(parsed.is_none());
+    }
+
+    #[test]
+    fn icy_parser_handles_block_straddling_reads() {
+        let mut p = IcyMetaParser::new(8);
+        let block = meta_block("Straddling Song");
+        // 8 audio bytes + the first 2 bytes of the metadata block in read 1
+        let mut first = b"12345678".to_vec();
+        first.extend_from_slice(&block[..2]);
+        let (audio, parsed) = p.feed(&first);
+        assert_eq!(&audio, b"12345678");
+        assert!(parsed.is_none());
+
+        // rest of the block + more audio in read 2
+        let mut second = block[2..].to_vec();
+        second.extend_from_slice(b"ABCDEFGH");
+        let (audio, parsed) = p.feed(&second);
+        assert_eq!(&audio, b"ABCDEFGH");
+        assert_eq!(
+            parsed.as_ref().and_then(|m| m.title.as_deref()),
+            Some("Straddling Song")
+        );
+    }
+
+    #[test]
+    fn icy_parser_handles_multiple_blocks() {
+        let mut p = IcyMetaParser::new(8);
+        let mut data = b"12345678".to_vec();
+        data.extend_from_slice(&meta_block("First Song"));
+        data.extend_from_slice(b"ABCDEFGH");
+        data.extend_from_slice(&meta_block("Second Song"));
+        data.extend_from_slice(b"WXYZ");
+        let (audio, parsed) = p.feed(&data);
+        assert_eq!(&audio, b"12345678ABCDEFGHWXYZ");
+        let parsed = parsed.expect("last metadata block should be returned");
+        assert_eq!(parsed.title.as_deref(), Some("Second Song"));
+    }
 }

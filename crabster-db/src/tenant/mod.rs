@@ -383,6 +383,50 @@ impl Database {
         }
     }
 
+    pub fn find_mount_by_source_password(
+        &self,
+        source_password: &str,
+    ) -> Result<Option<MountConfig>, anyhow::Error> {
+        let conn = self.conn();
+        let mut stmt = conn.prepare(
+            "SELECT id, station_id, account_id, mount_name, source_password,
+                    max_listeners, bitrate, format, public, hidden,
+                    fallback_mount, fallback_when_full, fallback_override, created_at, active
+             FROM mount_configs WHERE source_password = ?1 AND active = 1 LIMIT 1",
+        )?;
+
+        let mut rows = stmt.query_map(rusqlite::params![source_password], |row| {
+            let created_at_str: String = row.get(13)?;
+            Ok(MountConfig {
+                id: row.get(0)?,
+                station_id: row.get(1)?,
+                account_id: row.get(2)?,
+                mount_name: row.get(3)?,
+                source_password: row.get(4)?,
+                max_listeners: row.get(5)?,
+                bitrate: row.get(6)?,
+                format: row.get(7)?,
+                public: row.get::<_, i32>(8)? != 0,
+                hidden: row.get::<_, i32>(9)? != 0,
+                fallback_mount: row.get(10)?,
+                fallback_when_full: row.get::<_, i32>(11)? != 0,
+                fallback_override: row.get::<_, i32>(12)? != 0,
+                created_at: chrono::DateTime::parse_from_str(
+                    &created_at_str,
+                    "%Y-%m-%dT%H:%M:%S%.fZ",
+                )
+                .map(|d| d.to_utc())
+                .unwrap_or_else(|_| chrono::Utc::now()),
+                active: row.get::<_, i32>(14)? != 0,
+            })
+        })?;
+
+        match rows.next() {
+            Some(Ok(config)) => Ok(Some(config)),
+            _ => Ok(None),
+        }
+    }
+
     pub fn list_mount_configs(&self, account_id: &str) -> Result<Vec<MountConfig>, anyhow::Error> {
         let conn = self.conn();
         let mut stmt = conn.prepare(

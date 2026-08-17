@@ -11,6 +11,12 @@ use crate::ClusterConfig;
 
 pub struct EdgeNode;
 
+impl Default for EdgeNode {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
 impl EdgeNode {
     pub fn new() -> Self {
         Self
@@ -27,7 +33,6 @@ impl EdgeNode {
         }
 
         let origin_host = origin_host.to_string();
-        let origin_port = origin_port;
         for relay in relays {
             let mount = relay.local_mount.clone();
             let core = core.clone();

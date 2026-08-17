@@ -35,7 +35,7 @@ pub struct SourceInfo {
     pub stats: Arc<PLRwLock<MountStats>>,
 }
 
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, Default)]
 pub struct StreamMetadata {
     pub title: Option<String>,
     pub artist: Option<String>,
@@ -48,24 +48,6 @@ pub struct StreamMetadata {
     pub icy_url: Option<String>,
     pub icy_br: Option<u32>,
     pub audio_info: HashMap<String, String>,
-}
-
-impl Default for StreamMetadata {
-    fn default() -> Self {
-        Self {
-            title: None,
-            artist: None,
-            song: None,
-            description: None,
-            genre: None,
-            url: None,
-            icy_name: None,
-            icy_genre: None,
-            icy_url: None,
-            icy_br: None,
-            audio_info: HashMap::new(),
-        }
-    }
 }
 
 pub struct RingBuffer {
@@ -144,6 +126,12 @@ pub struct SourceManager {
     sources: DashMap<String, Arc<Source>>,
 }
 
+impl Default for SourceManager {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
 impl SourceManager {
     pub fn new() -> Self {
         Self {
@@ -180,10 +168,7 @@ impl SourceManager {
     }
 
     pub fn all_sources(&self) -> Vec<Arc<Source>> {
-        self.sources
-            .iter()
-            .map(|r| Arc::clone(&r.value()))
-            .collect()
+        self.sources.iter().map(|r| Arc::clone(r.value())).collect()
     }
 
     pub fn count(&self) -> usize {
@@ -238,8 +223,8 @@ mod tests {
         let mut rb = RingBuffer::new(8);
         // fill buffer then overwrite partially to create wrap
         rb.write(b"01234567"); // 8 bytes, fills exactly
-        rb.write(b"ABCD");    // 4 bytes, wraps: pos 0..4
-        // Read from position 4 (where "4567ABCD" starts in ring)
+        rb.write(b"ABCD"); // 4 bytes, wraps: pos 0..4
+                           // Read from position 4 (where "4567ABCD" starts in ring)
         let data = rb.read(4);
         assert_eq!(&*data, b"4567ABCD");
     }

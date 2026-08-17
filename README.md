@@ -27,6 +27,17 @@ curl -X SOURCE http://source:hackme@localhost:8000/test.mp3 \
   -T somefile.mp3
 ```
 
+## Shoutcast v1 Sources (legacy)
+
+Enable legacy Shoutcast sources (password line + `OK2` handshake) in `crabster.toml`:
+
+```toml
+shoutcast_compat = true
+shoutcast_mount = "/live"
+```
+
+The source connects to the stream port and sends only the password, then ICY headers. If `shoutcast_mount` is unset, the password is matched against configured mounts, falling back to the global `source_password` on mount `/`.
+
 ## Listen
 
 ```

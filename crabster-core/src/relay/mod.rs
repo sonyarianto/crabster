@@ -22,6 +22,12 @@ pub struct RelayManager {
     relays: Vec<Arc<RelayConnection>>,
 }
 
+impl Default for RelayManager {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
 impl RelayManager {
     pub fn new() -> Self {
         Self { relays: Vec::new() }
