@@ -162,7 +162,7 @@ The server serves status at:
 
 ### Implementation Tasks
 
-_Status legend: ✅ implemented · ⚠️ partial · ❌ not implemented (as of commit `c7aeadc` + fallback mount)_
+_Status legend: ✅ implemented · ⚠️ partial · ❌ not implemented (as of commit `b431734` + intro file)_
 
 1. ✅ **TCP Listener** — Bind to configurable ports, accept connections
 2. ✅ **HTTP Parser** — Parse SOURCE, PUT, GET, HEAD, POST, OPTIONS methods (OPTIONS/DELETE etc. respond 501)
@@ -176,7 +176,7 @@ _Status legend: ✅ implemented · ⚠️ partial · ❌ not implemented (as of 
 7. ❌ **Listener Management** — AVL tree of listeners per mount (`ListenerManager` module exists but is not wired into the GET path)
 8. ✅ **ICY Metadata** — Parse and insert metadata at `icy-metaint` intervals (source-side parsing for Shoutcast + HTTP opt-in, listener-side insertion for opted-in GET clients)
 9. ✅ **Fallback Mount** — Move listeners to alternate mount on source drop (`fallback_mount`, `fallback_when_full`, `fallback_override` in mount config/DB; listener follows the fallback chain, waits for the fallback source to connect, and moves back with `fallback_override`)
-10. ❌ **Intro File** — Prepend intro file before stream data (config field only)
+10. ✅ **Intro File** — Send intro file to new listeners before the live stream (`intro` in mount config; missing/unreadable file is logged and skipped)
 11. ❌ **Static File Serving** — Serve webroot, adminroot files
 12. ✅ **Admin Interface (Legacy)** — `/admin/` XML commands:
     - `mountlist`, `listclients`, `kickclient`, `moveclients`
@@ -593,7 +593,7 @@ Phase 1 ─── Core Protocol Parity ─────────────�
     ├── ✅ Format detection + plugin dispatch
     ├── ⚠️ Ring buffer (✅) + listener management (❌)
     ├── ✅ ICY metadata (insertion + parsing)
-    ├── ✅ Fallback mount (❌ intro file)
+    ├── ✅ Fallback mount + intro file
     ├── ❌ Static file serving
     ├── ✅ Legacy admin interface (placeholder responses)
     ├── ✅ Stats XML/JSON reporting

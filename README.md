@@ -59,6 +59,18 @@ Behavior (mirrors Icecast):
 
 The fallback chain can be deeper than one hop (up to 10 mounts, like Icecast).
 
+## Intro Files
+
+Play a file (e.g. a station jingle or welcome message) to each new listener before the live stream starts. Configure per-mount in `crabster.toml`:
+
+```toml
+[[mounts]]
+mount_name = "/live"
+intro = "/var/lib/crabster/intro.mp3"
+```
+
+The file is sent to every new listener right after the response headers and before the streamed audio. If the file is missing or unreadable, it is logged and skipped (the stream plays normally).
+
 ## YP Directory Publishing
 
 Public mounts can be listed in a Yellow Pages directory (e.g. [dir.xiph.org](http://dir.xiph.org)) so listeners can discover them. Enable it in `crabster.toml`:

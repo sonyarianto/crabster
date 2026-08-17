@@ -397,6 +397,7 @@ async fn handle_source(
             .as_ref()
             .map(|s| s.fallback_when_full)
             .unwrap_or(false),
+        intro: settings.as_ref().and_then(|s| s.intro.clone()),
         burst_size: 65536,
         metadata: Arc::new(parking_lot::RwLock::new(StreamMetadata::default())),
         stats: mount_stats,
@@ -880,6 +881,7 @@ async fn handle_shoutcast_source(
             .as_ref()
             .map(|s| s.fallback_when_full)
             .unwrap_or(false),
+        intro: settings.as_ref().and_then(|s| s.intro.clone()),
         burst_size: 65536,
         metadata: Arc::new(parking_lot::RwLock::new(StreamMetadata {
             icy_name,
@@ -937,6 +939,7 @@ struct MountFallbackSettings {
     max_listeners: Option<usize>,
     public: bool,
     hidden: bool,
+    intro: Option<String>,
 }
 
 async fn resolve_mount_settings(
@@ -953,6 +956,8 @@ async fn resolve_mount_settings(
                 max_listeners: cfg.max_listeners.map(|v| v as usize),
                 public: cfg.public,
                 hidden: cfg.hidden,
+                // DB mount configs have no intro field; file config only.
+                intro: None,
             });
         }
     }
@@ -967,6 +972,7 @@ async fn resolve_mount_settings(
                 max_listeners: m.max_listeners.map(|v| v as usize),
                 public: m.public.unwrap_or(true),
                 hidden: m.hidden.unwrap_or(false),
+                intro: m.intro.clone(),
             });
         }
     }
@@ -1216,6 +1222,25 @@ async fn handle_get(
 
     if writer.write_all(response.as_bytes()).await.is_err() {
         return;
+    }
+
+    // Send the intro file (if configured for the served mount) before the
+    // live stream, mirroring Icecast's per-listener intro playback. A missing
+    // or unreadable intro file is logged and skipped.
+    if let Some(intro_path) = source.info.intro.clone() {
+        match tokio::fs::read(&intro_path).await {
+            Ok(intro_bytes) => {
+                if writer.write_all(&intro_bytes).await.is_err() {
+                    return;
+                }
+            }
+            Err(e) => {
+                warn!(
+                    "Failed to read intro file {} for {}: {}",
+                    intro_path, serving_mount, e
+                );
+            }
+        }
     }
 
     listener_joined(&state, &source);

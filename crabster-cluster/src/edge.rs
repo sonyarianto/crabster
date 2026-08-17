@@ -115,6 +115,7 @@ impl EdgeNode {
                                 fallback_mount: None,
                                 fallback_override: false,
                                 fallback_when_full: false,
+                                intro: None,
                                 burst_size: 65536,
                                 metadata: Arc::clone(&metadata),
                                 stats: mount_stats,

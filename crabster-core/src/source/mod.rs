@@ -30,6 +30,8 @@ pub struct SourceInfo {
     pub fallback_mount: Option<String>,
     pub fallback_override: bool,
     pub fallback_when_full: bool,
+    /// Path to an intro file sent to new listeners before the live stream.
+    pub intro: Option<String>,
     pub burst_size: usize,
     pub metadata: Arc<PLRwLock<StreamMetadata>>,
     pub stats: Arc<PLRwLock<MountStats>>,

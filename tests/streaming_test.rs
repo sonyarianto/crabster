@@ -774,7 +774,7 @@ async fn test_fallback_override_moves_listener_back() {
         .await;
 
         let addr = server.stream_addr();
-        let mut main_w = connect_source(&addr, "/main").await;
+        let main_w = connect_source(&addr, "/main").await;
         let mut backup_w = connect_source(&addr, "/backup").await;
 
         // Listener connects to /main.
@@ -908,6 +908,91 @@ async fn test_fallback_when_full_serves_fallback() {
 
         drop(main_w);
         drop(backup_w);
+        server.shutdown().await;
+    })
+    .await
+    .unwrap();
+}
+
+#[tokio::test]
+async fn test_intro_file_sent_before_stream() {
+    tokio::time::timeout(Duration::from_secs(30), async {
+        // Create a temp intro file with a distinctive prefix.
+        let intro_dir = std::env::temp_dir().join(format!("crabster-intro-{}", std::process::id()));
+        std::fs::create_dir_all(&intro_dir).unwrap();
+        let intro_path = intro_dir.join("intro.mp3");
+        let intro_bytes = b"INTRO-HEADER-ONLY".to_vec();
+        std::fs::write(&intro_path, &intro_bytes).unwrap();
+
+        let stream_port = portpicker::pick_unused_port().expect("no free port");
+        let api_port = portpicker::pick_unused_port().expect("no free port");
+        let db_path = std::env::temp_dir().join(format!("crabster-intro-{}.db", stream_port));
+        let server = common::TestServer::start_with(ServerConfig {
+            stream_port,
+            api_port,
+            cluster_enabled: false,
+            db_path: Some(db_path.to_string_lossy().to_string()),
+            jwt_secret: "test-secret".into(),
+            mounts: vec![crabster_core::config::MountConfig {
+                mount_name: "/with-intro".into(),
+                intro: Some(intro_path.to_string_lossy().to_string()),
+                ..Default::default()
+            }],
+            ..Default::default()
+        })
+        .await;
+
+        let addr = server.stream_addr();
+        let mut source_w = connect_source(&addr, "/with-intro").await;
+
+        // Listener connects; the very first bytes must be the intro file.
+        let listener = tokio::net::TcpStream::connect(&addr).await.unwrap();
+        let (mut listener_r, mut listener_w) = tokio::io::split(listener);
+        listener_w
+            .write_all(b"GET /with-intro HTTP/1.0\r\n\r\n")
+            .await
+            .unwrap();
+        drop(listener_w);
+        let _ = read_until_header_end(&mut listener_r).await;
+
+        // Read the first chunk: it should be the intro file contents.
+        let mut first = [0u8; 64];
+        let n = listener_r.read(&mut first).await.unwrap();
+        let first_bytes = &first[..n];
+        assert!(
+            first_bytes.len() >= intro_bytes.len(),
+            "intro should be delivered before stream, got {} bytes",
+            first_bytes.len()
+        );
+        assert_eq!(
+            &first_bytes[..intro_bytes.len()],
+            &intro_bytes[..],
+            "listener should receive the intro file contents first"
+        );
+
+        // Then live stream data follows.
+        source_w
+            .write_all(&generate_test_audio(4096))
+            .await
+            .unwrap();
+        let mut rest = Vec::new();
+        let mut buf = [0u8; 4096];
+        let start = std::time::Instant::now();
+        while start.elapsed() < Duration::from_secs(5) && rest.len() < 4096 {
+            match listener_r.read(&mut buf).await {
+                Ok(0) => break,
+                Ok(n) => rest.extend_from_slice(&buf[..n]),
+                Err(_) => break,
+            }
+        }
+        assert!(
+            rest.len() >= 1024,
+            "stream data should follow the intro, got {} bytes",
+            rest.len()
+        );
+
+        drop(source_w);
+        std::fs::remove_dir_all(&intro_dir).ok();
         server.shutdown().await;
     })
     .await
