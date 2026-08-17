@@ -29,6 +29,10 @@ pub struct ServerConfig {
     /// Per-mount settings (fallback mount, max listeners, public, etc.).
     #[serde(default)]
     pub mounts: Vec<crabster_core::config::MountConfig>,
+    /// Root directory for static web files (defaults to core config webroot).
+    pub webroot: Option<String>,
+    /// Root directory for static admin files (defaults to core config adminroot).
+    pub adminroot: Option<String>,
 }
 
 impl Default for ServerConfig {
@@ -46,6 +50,8 @@ impl Default for ServerConfig {
             yp_url: None,
             hostname: "localhost".into(),
             mounts: Vec::new(),
+            webroot: None,
+            adminroot: None,
         }
     }
 }
@@ -86,6 +92,12 @@ pub async fn run_with_config(
         listen.shoutcast_mount = config.shoutcast_mount.clone();
     }
     core_config.mounts = config.mounts.clone();
+    if let Some(webroot) = config.webroot.clone() {
+        core_config.paths.webroot = webroot;
+    }
+    if let Some(adminroot) = config.adminroot.clone() {
+        core_config.paths.adminroot = adminroot;
+    }
 
     let core_state: SharedState = Arc::new(AppState {
         config: RwLock::new(core_config.clone()),
@@ -1151,6 +1163,15 @@ async fn handle_get(
     }
 
     if path.starts_with("/admin/") {
+        // Try a static file from adminroot first (e.g. admin UI assets),
+        // falling back to the legacy XML admin commands.
+        let adminroot = state.config.read().await.paths.adminroot.clone();
+        if crabster_core::fserve::try_serve(&adminroot, path, &mut writer)
+            .await
+            .unwrap_or(false)
+        {
+            return;
+        }
         handle_legacy_admin(path, writer, state).await;
         return;
     }
@@ -1165,6 +1186,14 @@ async fn handle_get(
     {
         Some((s, m)) => (s, m),
         None => {
+            // No active mount: try a static file from webroot before 404.
+            let webroot = state.config.read().await.paths.webroot.clone();
+            if crabster_core::fserve::try_serve(&webroot, path, &mut writer)
+                .await
+                .unwrap_or(false)
+            {
+                return;
+            }
             let _ = writer
                 .write_all(b"HTTP/1.0 404 Not Found\r\nContent-Type: text/plain\r\n\r\nNo such mountpoint\r\n")
                 .await;

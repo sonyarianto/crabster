@@ -2,6 +2,7 @@ pub mod admin;
 pub mod auth;
 pub mod config;
 pub mod format;
+pub mod fserve;
 pub mod listener;
 pub mod relay;
 pub mod source;

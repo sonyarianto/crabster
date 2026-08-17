@@ -999,6 +999,70 @@ async fn test_intro_file_sent_before_stream() {
     .unwrap();
 }
 
+#[tokio::test]
+async fn test_static_file_serving_from_webroot() {
+    tokio::time::timeout(Duration::from_secs(30), async {
+        // Create a temp webroot with a few files.
+        let webroot = std::env::temp_dir().join(format!("crabster-web-{}", std::process::id()));
+        let subdir = webroot.join("assets");
+        std::fs::create_dir_all(&subdir).unwrap();
+        std::fs::write(webroot.join("index.html"), "<html>hello</html>").unwrap();
+        std::fs::write(subdir.join("app.css"), "body { color: red; }").unwrap();
+        std::fs::write(webroot.join("secret.txt"), "secret-data").unwrap();
+
+        let stream_port = portpicker::pick_unused_port().expect("no free port");
+        let api_port = portpicker::pick_unused_port().expect("no free port");
+        let db_path = std::env::temp_dir().join(format!("crabster-web-{}.db", stream_port));
+        let server = common::TestServer::start_with(ServerConfig {
+            stream_port,
+            api_port,
+            cluster_enabled: false,
+            db_path: Some(db_path.to_string_lossy().to_string()),
+            jwt_secret: "test-secret".into(),
+            webroot: Some(webroot.to_string_lossy().to_string()),
+            ..Default::default()
+        })
+        .await;
+
+        // index.html with correct content type
+        let resp = server
+            .api_get_with_full_response(&format!("http://127.0.0.1:{}/index.html", stream_port))
+            .await;
+        assert!(resp.contains("200 OK"), "got: {}", resp);
+        assert!(resp.contains("Content-Type: text/html"), "got: {}", resp);
+        assert!(resp.contains("<html>hello</html>"), "got: {}", resp);
+
+        // nested file with css mime
+        let resp = server
+            .api_get_with_full_response(&format!("http://127.0.0.1:{}/assets/app.css", stream_port))
+            .await;
+        assert!(resp.contains("200 OK"), "got: {}", resp);
+        assert!(resp.contains("Content-Type: text/css"), "got: {}", resp);
+        assert!(resp.contains("body { color: red; }"), "got: {}", resp);
+
+        // missing file -> 404
+        let resp = server
+            .api_get_with_full_response(&format!("http://127.0.0.1:{}/nope.txt", stream_port))
+            .await;
+        assert!(resp.contains("404"), "got: {}", resp);
+
+        // path traversal must not escape webroot
+        let resp = server
+            .api_get_with_full_response(&format!("http://127.0.0.1:{}/../secret.txt", stream_port))
+            .await;
+        assert!(
+            resp.contains("404"),
+            "traversal should be rejected, got: {}",
+            resp
+        );
+
+        std::fs::remove_dir_all(&webroot).ok();
+        server.shutdown().await;
+    })
+    .await
+    .unwrap();
+}
+
 async fn read_audio(r: &mut tokio::io::ReadHalf<tokio::net::TcpStream>, target: usize) -> Vec<u8> {
     let mut data = Vec::new();
     let mut buf = [0u8; 4096];

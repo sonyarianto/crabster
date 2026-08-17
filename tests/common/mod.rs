@@ -72,18 +72,36 @@ impl TestServer {
     }
 
     pub async fn api_get(&self, path: &str) -> Result<String, String> {
-        use tokio::io::{AsyncReadExt, AsyncWriteExt};
-        let addr = format!("127.0.0.1:{}", self.api_port);
-        let mut stream = tokio::net::TcpStream::connect(&addr)
-            .await
-            .map_err(|e| format!("connect: {e}"))?;
+        let response = self
+            .api_get_with_full_response(&format!("{}{}", self.api_url(), path))
+            .await;
+        // Extract body after headers (after first \r\n\r\n)
+        if let Some(body_start) = response.find("\r\n\r\n") {
+            Ok(response[body_start + 4..].to_string())
+        } else {
+            Ok(response)
+        }
+    }
 
-        let request =
-            format!("GET {path} HTTP/1.0\r\nHost: 127.0.0.1\r\nConnection: close\r\n\r\n");
-        stream
-            .write_all(request.as_bytes())
-            .await
-            .map_err(|e| format!("write: {e}"))?;
+    /// Performs a raw HTTP GET to an arbitrary URL (useful for hitting the
+    /// stream port or checking headers) and returns the full response text.
+    pub async fn api_get_with_full_response(&self, url: &str) -> String {
+        use tokio::io::{AsyncReadExt, AsyncWriteExt};
+        let url = url.strip_prefix("http://").unwrap_or(url);
+        let (host, path) = match url.split_once('/') {
+            Some((h, p)) => (h, format!("/{p}")),
+            None => (url, "/".to_string()),
+        };
+        let addr = host.to_string();
+        let mut stream = match tokio::net::TcpStream::connect(&addr).await {
+            Ok(s) => s,
+            Err(_) => return String::new(),
+        };
+
+        let request = format!("GET {path} HTTP/1.0\r\nHost: {host}\r\nConnection: close\r\n\r\n");
+        if stream.write_all(request.as_bytes()).await.is_err() {
+            return String::new();
+        }
 
         let mut response = Vec::new();
         let mut buf = [0u8; 4096];
@@ -91,17 +109,10 @@ impl TestServer {
             match stream.read(&mut buf).await {
                 Ok(0) => break,
                 Ok(n) => response.extend_from_slice(&buf[..n]),
-                Err(e) => return Err(format!("read: {e}")),
+                Err(_) => break,
             }
         }
-        let response_str = String::from_utf8_lossy(&response).to_string();
-
-        // Extract body after headers (after first \r\n\r\n)
-        if let Some(body_start) = response_str.find("\r\n\r\n") {
-            Ok(response_str[body_start + 4..].to_string())
-        } else {
-            Ok(response_str)
-        }
+        String::from_utf8_lossy(&response).to_string()
     }
 
     pub async fn shutdown(mut self) {
