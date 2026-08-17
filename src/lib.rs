@@ -511,6 +511,89 @@ impl IcyMetaParser {
     }
 }
 
+/// Inserts SHOUTcast in-stream metadata blocks into the audio sent to a
+/// listener every `metaint` audio bytes. A single 0-length block is sent when
+/// the metadata has not changed since the previous block.
+struct IcyMetaInserter {
+    metaint: usize,
+    remaining_audio: usize,
+    last_title: Option<String>,
+    last_url: Option<String>,
+}
+
+impl IcyMetaInserter {
+    fn new(metaint: u16) -> Self {
+        let metaint = metaint as usize;
+        Self {
+            metaint,
+            remaining_audio: metaint,
+            last_title: None,
+            last_url: None,
+        }
+    }
+
+    /// Builds the block to insert: a 1-byte length (in 16-byte units) followed
+    /// by the null-padded "StreamTitle='...';StreamUrl='...';" payload, or a
+    /// single 0 byte when nothing changed.
+    fn block(&mut self, title: Option<&str>, url: Option<&str>) -> Vec<u8> {
+        if self.last_title == title.map(str::to_string) && self.last_url == url.map(str::to_string)
+        {
+            return vec![0];
+        }
+        self.last_title = title.map(str::to_string);
+        self.last_url = url.map(str::to_string);
+
+        let mut payload = String::new();
+        if let Some(title) = title {
+            payload.push_str(&format!("StreamTitle='{}';", title));
+        }
+        if let Some(url) = url {
+            payload.push_str(&format!("StreamUrl='{}';", url));
+        }
+        if payload.is_empty() {
+            return vec![0];
+        }
+        let units = payload.len().div_ceil(16);
+        let mut block = vec![units as u8];
+        block.extend_from_slice(payload.as_bytes());
+        block.resize(1 + units * 16, 0);
+        block
+    }
+}
+
+/// Writes audio to a listener, inserting SHOUTcast metadata blocks every
+/// `metaint` audio bytes when the listener opted in.
+async fn write_with_icy_metadata(
+    inserter: &mut Option<IcyMetaInserter>,
+    data: &[u8],
+    source: &Source,
+    writer: &mut tokio::io::WriteHalf<tokio::net::TcpStream>,
+) -> std::io::Result<()> {
+    let Some(inserter) = inserter else {
+        return writer.write_all(data).await;
+    };
+
+    let (title, url) = {
+        let meta = source.info.metadata.read();
+        (meta.title.clone(), meta.url.clone())
+    };
+
+    let mut out = Vec::with_capacity(data.len() + 64);
+    let mut chunk = data;
+    while !chunk.is_empty() {
+        if inserter.remaining_audio == 0 {
+            out.extend_from_slice(&inserter.block(title.as_deref(), url.as_deref()));
+            inserter.remaining_audio = inserter.metaint;
+        } else {
+            let take = inserter.remaining_audio.min(chunk.len());
+            out.extend_from_slice(&chunk[..take]);
+            inserter.remaining_audio -= take;
+            chunk = &chunk[take..];
+        }
+    }
+    writer.write_all(&out).await
+}
+
 /// Registers a source and pumps its bytes into the ring buffer until EOF,
 /// then unregisters it. Shared by the HTTP SOURCE/PUT and Shoutcast v1 paths.
 async fn run_source_stream(
@@ -800,7 +883,7 @@ async fn handle_shoutcast_source(
 
 async fn handle_get(
     path: &str,
-    _headers: &std::collections::HashMap<String, String>,
+    headers: &std::collections::HashMap<String, String>,
     mut writer: tokio::io::WriteHalf<tokio::net::TcpStream>,
     state: SharedState,
 ) {
@@ -864,7 +947,7 @@ async fn handle_get(
 
     let format_info = state.format_registry.get(source.info.format).unwrap();
 
-    let (icy_br, icy_name, icy_genre, icy_url, icy_pub, icy_meta_interval) = {
+    let (icy_br, icy_name, icy_genre, icy_url, icy_pub) = {
         let meta = source.info.metadata.read();
         (
             meta.icy_br.unwrap_or(128),
@@ -874,8 +957,19 @@ async fn handle_get(
             meta.icy_genre.clone().unwrap_or_else(|| "Various".into()),
             meta.icy_url.clone().unwrap_or_default(),
             if source.info.public { "1" } else { "0" },
-            format_info.icy_metadata_interval,
         )
+    };
+
+    // Only advertise and insert in-stream ICY metadata for listeners that opt
+    // in via the icy-metadata request header; everyone else gets a clean stream.
+    let wants_metadata = headers
+        .get("icy-metadata")
+        .map(|v| v.trim() == "1")
+        .unwrap_or(false);
+    let icy_metaint = if wants_metadata {
+        format_info.icy_metadata_interval
+    } else {
+        None
     };
 
     let mut response = format!(
@@ -888,7 +982,7 @@ async fn handle_get(
         format_info.content_type, icy_br, icy_name, icy_genre, icy_url, icy_pub,
     );
 
-    if let Some(interval) = icy_meta_interval {
+    if let Some(interval) = icy_metaint {
         response.push_str(&format!("icy-metaint: {}\r\n", interval));
     }
 
@@ -905,6 +999,7 @@ async fn handle_get(
 
     let buf_clone = Arc::clone(&source.buffer);
     let mut pos = buf_clone.read().current_position();
+    let mut meta_inserter = icy_metaint.map(IcyMetaInserter::new);
 
     loop {
         // Drain any buffered audio first so bytes written just before the
@@ -913,7 +1008,11 @@ async fn handle_get(
         if current_pos > pos {
             let data = buf_clone.read().read(pos);
             pos = current_pos;
-            if !data.is_empty() && writer.write_all(&data).await.is_err() {
+            if !data.is_empty()
+                && write_with_icy_metadata(&mut meta_inserter, &data, &source, &mut writer)
+                    .await
+                    .is_err()
+            {
                 break;
             }
         } else if !source.connected.load(std::sync::atomic::Ordering::Relaxed) {
@@ -990,7 +1089,7 @@ mod tests {
     /// 16-byte units) followed by the null-padded payload.
     fn meta_block(title: &str) -> Vec<u8> {
         let payload = format!("StreamTitle='{}';", title);
-        let units = (payload.len() + 15) / 16;
+        let units = payload.len().div_ceil(16);
         let mut block = vec![units as u8];
         let mut body = payload.into_bytes();
         body.resize(units * 16, 0);
@@ -1063,5 +1162,32 @@ mod tests {
         assert_eq!(&audio, b"12345678ABCDEFGHWXYZ");
         let parsed = parsed.expect("last metadata block should be returned");
         assert_eq!(parsed.title.as_deref(), Some("Second Song"));
+    }
+
+    #[test]
+    fn icy_inserter_sends_full_block_then_zero_length() {
+        let mut ins = IcyMetaInserter::new(8);
+        let first = ins.block(Some("Song One"), None);
+        assert_eq!(first[0], 2);
+        assert_eq!(first.len(), 33);
+        assert!(String::from_utf8_lossy(&first).contains("StreamTitle='Song One';"));
+
+        // unchanged metadata -> 0-length block
+        assert_eq!(ins.block(Some("Song One"), None), vec![0]);
+    }
+
+    #[test]
+    fn icy_inserter_block_changes_with_title() {
+        let mut ins = IcyMetaInserter::new(8);
+        ins.block(Some("Song One"), None);
+        let changed = ins.block(Some("Song Two"), None);
+        assert_ne!(changed, vec![0]);
+        assert!(String::from_utf8_lossy(&changed).contains("StreamTitle='Song Two';"));
+    }
+
+    #[test]
+    fn icy_inserter_empty_metadata_is_zero_length() {
+        let mut ins = IcyMetaInserter::new(8);
+        assert_eq!(ins.block(None, None), vec![0]);
     }
 }

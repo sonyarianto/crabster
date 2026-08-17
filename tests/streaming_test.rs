@@ -508,6 +508,93 @@ async fn test_http_source_without_metadata_opt_in_passthrough() {
     .unwrap();
 }
 
+#[tokio::test]
+async fn test_get_listener_icy_metadata_insertion() {
+    tokio::time::timeout(Duration::from_secs(30), async {
+        let server = common::TestServer::start().await;
+        let mount = "/meta-out.mp3";
+
+        // SOURCE opts in to metadata and streams audio plus one metadata block.
+        let source = tokio::net::TcpStream::connect(server.stream_addr())
+            .await
+            .unwrap();
+        let (mut source_r, mut source_w) = tokio::io::split(source);
+        let source_headers = format!(
+            "SOURCE {} HTTP/1.0\r\n\
+             Authorization: Basic c291cmNlOmhhY2ttZQ==\r\n\
+             Content-Type: audio/mpeg\r\n\
+             icy-metadata: 1\r\n\r\n",
+            mount
+        );
+        source_w.write_all(source_headers.as_bytes()).await.unwrap();
+        let _ = read_until_header_end(&mut source_r).await;
+
+        // Listener opts in too: it must get icy-metaint and an inserted block.
+        let listener = tokio::net::TcpStream::connect(server.stream_addr())
+            .await
+            .unwrap();
+        let (mut listener_r, mut listener_w) = tokio::io::split(listener);
+        let get_request = format!("GET {} HTTP/1.0\r\nicy-metadata: 1\r\n\r\n", mount);
+        listener_w.write_all(get_request.as_bytes()).await.unwrap();
+        drop(listener_w);
+
+        let header_bytes = read_until_header_end(&mut listener_r).await;
+        let header = String::from_utf8_lossy(&header_bytes);
+        assert!(header.contains("200 OK"), "got: {}", header);
+        assert!(
+            header.contains("icy-metaint: 8192"),
+            "Listener that opts in should get icy-metaint, got: {}",
+            header
+        );
+
+        // Stream 8192 audio bytes, then a source metadata block, then more audio.
+        let audio_data = generate_test_audio(30000);
+        let sender = tokio::spawn(async move {
+            source_w.write_all(&audio_data[..8192]).await.unwrap();
+            tokio::time::sleep(Duration::from_millis(20)).await;
+            let mut payload = b"StreamTitle='Listener Song';".to_vec();
+            payload.resize(32, 0);
+            let mut block = vec![2u8];
+            block.extend_from_slice(&payload);
+            source_w.write_all(&block).await.unwrap();
+            for chunk in audio_data[8192..].chunks(4096) {
+                source_w.write_all(chunk).await.unwrap();
+                tokio::time::sleep(Duration::from_millis(50)).await;
+            }
+        });
+
+        // The listener stream is audio with metadata blocks inserted every
+        // 8192 audio bytes; the title must appear in a block once the source
+        // metadata is parsed (at the latest after the second boundary,
+        // ~16.5KB into the stream).
+        let mut stream = Vec::new();
+        let mut read_buf = [0u8; 4096];
+        let start = std::time::Instant::now();
+        while stream.len() < 16500 && start.elapsed() < Duration::from_secs(5) {
+            match listener_r.read(&mut read_buf).await {
+                Ok(0) => break,
+                Ok(n) => stream.extend_from_slice(&read_buf[..n]),
+                Err(_) => break,
+            }
+        }
+        assert!(
+            stream.len() >= 16500,
+            "Listener should receive streamed audio plus metadata blocks, got {} bytes",
+            stream.len()
+        );
+        let lossy = String::from_utf8_lossy(&stream);
+        assert!(
+            lossy.contains("Listener Song"),
+            "Inserted metadata block should carry the stream title"
+        );
+
+        sender.await.ok();
+        server.shutdown().await;
+    })
+    .await
+    .unwrap();
+}
+
 fn generate_test_audio(size: usize) -> Vec<u8> {
     (0..size).map(|i| (i % 256) as u8).collect()
 }
